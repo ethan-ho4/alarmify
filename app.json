@@ -1,0 +1,59 @@
+{
+  "expo": {
+    "name": "Alarmify",
+    "slug": "alarmify",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.alarmify.app",
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "fetch",
+          "remote-notification",
+          "audio"
+        ],
+        "LSApplicationQueriesSchemes": ["spotify"],
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.alarmify.app",
+      "permissions": [
+        "SCHEDULE_EXACT_ALARM",
+        "USE_EXACT_ALARM"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static"
+    },
+    "plugins": [
+      "expo-dev-client",
+      "expo-router",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#1DB954",
+          "sounds": []
+        }
+      ],
+      "expo-secure-store",
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "scheme": "alarmify",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "0b3e5477-1efe-4bb4-aa8d-ec3f84fc8ef7"
+      }
+    },
+    "owner": "galaxy4s-organization"
+  }
+}
