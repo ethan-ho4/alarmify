@@ -4,16 +4,21 @@
 //  and bootstraps global state.
 // ─────────────────────────────────────────────
 
-import { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
+import * as SplashScreen from 'expo-splash-screen';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StyleSheet } from 'react-native';
 import { useStore } from '../src/store/useStore';
 import { playTrack } from '../src/services/spotify';
 import { requestNotificationPermission } from '../src/services/alarms';
 import { COLORS } from '../src/theme';
+import AnimatedSplash from '../src/components/AnimatedSplash';
+
+// Keep the splash screen visible while we fetch resources
+SplashScreen.preventAutoHideAsync();
 
 // Configure foreground notification behaviour
 Notifications.setNotificationHandler({
@@ -21,12 +26,15 @@ Notifications.setNotificationHandler({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge:  false,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
 export default function RootLayout() {
   const loadAlarms = useStore((s) => s.loadAlarms);
   const loadAuth   = useStore((s) => s.loadAuth);
+  const [showSplash, setShowSplash] = useState(true);
 
   useEffect(() => {
     // Bootstrap
@@ -60,6 +68,7 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={styles.root}>
+      {showSplash && <AnimatedSplash onAnimationComplete={() => setShowSplash(false)} />}
       <StatusBar style="light" />
       <Stack
         screenOptions={{

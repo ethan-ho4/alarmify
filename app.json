@@ -3,12 +3,18 @@
     "name": "Alarmify",
     "slug": "alarmify",
     "version": "1.0.0",
+    "icon": "./alarmify_icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
+    },
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.alarmify.app",
+      "bundleIdentifier": "com.ethanho.alarmify",
       "infoPlist": {
         "UIBackgroundModes": [
           "fetch",
@@ -20,7 +26,7 @@
       }
     },
     "android": {
-      "package": "com.alarmify.app",
+      "package": "com.ethanho.alarmify",
       "permissions": [
         "SCHEDULE_EXACT_ALARM",
         "USE_EXACT_ALARM"
