@@ -17,7 +17,10 @@ import {
   scheduleAllAlarmTimers,
 } from '../services/alarmTimers';
 import { syncActiveAlarmToShortcuts } from '../services/shortcutsBridge';
-import { usesLegacyAlarmPlayback } from '../utils/alarmPlaybackMode';
+import {
+  usesAlarmTimersAndKeepalive,
+  usesLegacyAlarmPlayback,
+} from '../utils/alarmPlaybackMode';
 
 interface UserProfile {
   name: string;
@@ -60,7 +63,7 @@ export const useStore = create<AppState>((set, get) => ({
   loadAlarms: async () => {
     const alarms = await fetchAlarms();
     set({ alarms, alarmsLoaded: true });
-    if (usesLegacyAlarmPlayback()) {
+    if (usesAlarmTimersAndKeepalive()) {
       scheduleAllAlarmTimers(alarms);
     }
     await syncActiveAlarmToShortcuts(alarms);
@@ -72,7 +75,7 @@ export const useStore = create<AppState>((set, get) => ({
     const alarms = [...get().alarms, withIds];
     set({ alarms });
     await persistAlarms(alarms);
-    if (usesLegacyAlarmPlayback()) scheduleTimersForAlarm(withIds);
+    if (usesAlarmTimersAndKeepalive()) scheduleTimersForAlarm(withIds);
     await syncActiveAlarmToShortcuts(alarms);
   },
 
@@ -82,7 +85,7 @@ export const useStore = create<AppState>((set, get) => ({
     const alarms = get().alarms.map((a) => (a.id === alarm.id ? withIds : a));
     set({ alarms });
     await persistAlarms(alarms);
-    if (usesLegacyAlarmPlayback()) scheduleTimersForAlarm(withIds);
+    if (usesAlarmTimersAndKeepalive()) scheduleTimersForAlarm(withIds);
     await syncActiveAlarmToShortcuts(alarms);
   },
 

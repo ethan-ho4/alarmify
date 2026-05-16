@@ -1,25 +1,34 @@
-# iOS Shortcuts alarm setup
+# iOS alarm setup (Focus + Shortcuts)
 
-Alarmify on iPhone does **not** ring by itself. You configure the time and song in Alarmify; a **Personal Automation** in the Shortcuts app fires at that time and plays your track in Spotify.
+Alarmify on iPhone does **not** play music by itself. It keeps **silent audio** running while an alarm is enabled, fires at the scheduled time, **stops silent audio** (so the app session ends), and saves a **Spotify link** (track, album, or playlist) for Shortcuts.
 
-## Steps
+You configure **Focus** and **Shortcuts** outside Alarmify (one time).
 
-1. **Set your alarm in Alarmify** — time, song, and leave it enabled.
-2. **Shortcuts → Automation → + → Personal Automation → Time of Day** — use the **same time** (and repeat days) as in Alarmify. Turn on **Run Immediately**.
-3. **Add action: Get Active Alarm Music Link** (under Alarmify).
-4. **Add action: Open URLs** — pass the Music Link from step 3.
-5. **Test** — run the automation manually and confirm Spotify plays the correct track.
+## 1. Set your alarm in Alarmify
 
-## When you change alarms
+Choose time and music. Leave the alarm **enabled**.
 
-If you change the **time** in Alarmify, update the automation time in Shortcuts to match. Changing the **song** only requires saving in Alarmify (App Group syncs automatically).
+## 2. Create a Focus for Alarmify
 
-## Limits
+**Settings → Focus** → create or edit a Focus → add **Alarmify** under apps so Focus is on while you use Alarmify and off when you leave.
 
-- Shortcuts is less reliable than the built-in Clock app.
-- Requires a **development or production build** with the Alarmify Shortcuts module (not Expo Go).
-- Playback usually opens the Spotify app on this phone.
+## 3. Shortcuts automation
+
+**Shortcuts → Automation → + → Focus** → your Alarmify Focus → **Turns Off** → Add Action:
+
+1. **Get Active Alarm Music Link** (Alarmify)
+2. **Open URLs** (use the music link from step 1)
+
+Turn off **Ask Before Running**.
+
+## 4. Overnight
+
+Do **not** force-quit Alarmify before the alarm. Silent audio keeps the app scheduled; when the alarm fires, audio stops, Focus turns off, and your automation should open Spotify.
+
+## Test
+
+Close Alarmify from the home screen (avoid force-quit in the app switcher). Confirm Focus turns off and Spotify opens with the correct music.
 
 ## Legacy Web API path (developers)
 
-Set `EXPO_PUBLIC_ALARMIFY_LEGACY_IOS_PLAYBACK=1` to restore the old keepalive + Spotify Web API alarm path on iOS.
+Set `EXPO_PUBLIC_ALARMIFY_LEGACY_IOS_PLAYBACK=1` to use in-app Spotify Web API playback instead of Focus + Shortcuts.

@@ -7,29 +7,29 @@ export const SHORTCUTS_SETUP_STEPS: ShortcutsSetupStep[] = [
   {
     title: '1. Set your alarm in Alarmify',
     body:
-      'Choose the time and song here. Keep the alarm enabled. Alarmify saves the Spotify link for Shortcuts — it does not ring by itself on iOS.',
+      'Pick a time and a track, album, or playlist. Keep the alarm enabled. Alarmify runs silent audio overnight and saves the Spotify link for Shortcuts.',
   },
   {
-    title: '2. Create a Personal Automation in Shortcuts',
+    title: '2. Create a Focus for Alarmify',
     body:
-      'Open Shortcuts → Automation → + → Personal Automation → Time of Day. Set the same time as your Alarmify alarm (and the same days if you repeat). Choose "Run Immediately".',
+      'Settings → Focus → + (or edit a Focus) → add Alarmify under Apps so the Focus turns on while you use Alarmify and off when you leave it. Name it something you will recognize (e.g. Alarmify).',
   },
   {
-    title: '3. Add "Get Active Alarm Music Link"',
+    title: '3. Create a Shortcuts automation',
     body:
-      'Search for Alarmify → tap "Get Active Alarm Music Link". This reads the song you configured without opening Alarmify.',
+      'Shortcuts → Automation → + → Focus → choose your Alarmify Focus → turns Off → Add Action → search Alarmify → Get Active Alarm Music Link → Add Open URLs and use that link → turn off Ask Before Running.',
   },
   {
-    title: '4. Add "Open URLs"',
+    title: '4. Do not force-quit before the alarm',
     body:
-      'Add Open URLs and pass the Music Link from the previous step. Spotify should open and start playback on this phone.',
+      'Leave Alarmify running in the background (silent audio). If you force-quit before the alarm, Focus may already be off and the automation will not run when the alarm fires.',
   },
   {
-    title: '5. Test before you rely on it',
+    title: '5. Test once',
     body:
-      'Run the automation once manually (play button on the automation). Confirm Spotify plays the right track. iOS Shortcuts is less reliable than the Clock app — keep your automation time in sync when you change alarms.',
+      'With an alarm enabled, close Alarmify (home swipe, do not force-quit from the app switcher if you can avoid it). Your Focus should turn off and the automation should open Spotify with the right music.',
   },
 ];
 
 export const SHORTCUTS_SETUP_FOOTNOTE =
-  'If you change the alarm time in Alarmify, update the automation time in Shortcuts to match.';
+  'At alarm time Alarmify stops silent audio and ends its session so Focus turns off. Your automation opens Spotify — not Alarmify itself.';

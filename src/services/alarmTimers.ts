@@ -18,7 +18,13 @@ import {
   revealAlarmPlayback,
 } from './spotify';
 import { alarmifyDebug } from '../utils/alarmifyDebug';
-import { isKeepaliveActuallyPlaying } from './backgroundAudio';
+import {
+  usesIosFocusKeepaliveAlarm,
+  usesLegacyAlarmPlayback,
+} from '../utils/alarmPlaybackMode';
+import { useStore } from '../store/useStore';
+import { syncActiveAlarmToShortcuts } from './shortcutsBridge';
+import { isKeepaliveActuallyPlaying, stopBackgroundKeepalive } from './backgroundAudio';
 import { disableAlarmAfterFired } from './alarmPlaybackLifecycle';
 
 // Map of alarmId → array of active timer handles
@@ -84,6 +90,17 @@ async function onAlarmFired(alarm: Alarm): Promise<void> {
     trackUri: alarm.track?.uri,
   });
 
+  if (usesIosFocusKeepaliveAlarm()) {
+    const alarms = useStore.getState().alarms;
+    await syncActiveAlarmToShortcuts(alarms);
+    alarmifyDebug('AlarmTimer', 'iOS Focus path: synced URI, stopping keepalive', {
+      alarmId: alarm.id,
+    });
+    await stopBackgroundKeepalive();
+    disableAlarmAfterFired(alarm.id);
+    return;
+  }
+
   if (alarm.track?.uri) {
     const revealed = await revealAlarmPlayback(alarm.track.uri, ALARM_REVEAL_VOLUME_PERCENT);
     alarmifyDebug('AlarmTimer', 'revealAlarmPlayback result', { revealed });
@@ -102,6 +119,7 @@ async function onAlarmFired(alarm: Alarm): Promise<void> {
 }
 
 async function onAlarmPrime(alarm: Alarm): Promise<void> {
+  if (usesIosFocusKeepaliveAlarm()) return;
   if (!alarm.track?.uri) return;
   const keepalivePlaying = await isKeepaliveActuallyPlaying();
   if (!keepalivePlaying) {
@@ -153,7 +171,7 @@ export function scheduleTimersForAlarm(alarm: Alarm): void {
   const handles: ReturnType<typeof setTimeout>[] = [];
 
   // Premium path: start the track at volume 0 shortly before fire, then unmute at fire.
-  if (alarm.track?.uri) {
+  if (alarm.track?.uri && usesLegacyAlarmPlayback()) {
     const primeDelay = Math.max(0, delay - ALARM_PREARM_MS);
     handles.push(setTimeout(() => void onAlarmPrime(alarm), primeDelay));
   }

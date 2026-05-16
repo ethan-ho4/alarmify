@@ -27,7 +27,7 @@ export function ShortcutsAlarmBar() {
         >
           <Ionicons name="flash-outline" size={18} color={COLORS.primary} />
           <View style={styles.textCol}>
-            <Text style={styles.title}>Alarm uses iOS Shortcuts</Text>
+            <Text style={styles.title}>Focus + Shortcuts required</Text>
             <Text style={styles.detail}>View setup steps</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={COLORS.textMuted} />

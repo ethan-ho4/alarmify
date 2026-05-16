@@ -6,13 +6,13 @@ import {
 } from 'alarmify-shortcuts';
 import { Alarm } from '../types';
 import { sanitizeSpotifyUrl } from '../utils/spotifyUri';
-import { usesShortcutsAlarmOnIos } from '../utils/alarmPlaybackMode';
+import { usesIosFocusKeepaliveAlarm } from '../utils/alarmPlaybackMode';
 import { notifyShortcutsSyncFailure } from './shortcutsDebugNotify';
 
 export { isShortcutsBridgeAvailable, getActiveAlarmPayload };
 
 export function shouldSyncToShortcuts(): boolean {
-  return usesShortcutsAlarmOnIos() && Platform.OS === 'ios';
+  return usesIosFocusKeepaliveAlarm();
 }
 
 /** Write the next enabled alarm track URI into the shared App Group. */

@@ -29,7 +29,11 @@ import {
 } from '../src/services/backgroundAudio';
 import { registerAlarmBackgroundTask } from '../src/services/backgroundTasks';
 import { syncActiveAlarmToShortcuts } from '../src/services/shortcutsBridge';
-import { usesLegacyAlarmPlayback } from '../src/utils/alarmPlaybackMode';
+import {
+  usesAlarmTimersAndKeepalive,
+  usesIosFocusKeepaliveAlarm,
+  usesLegacyAlarmPlayback,
+} from '../src/utils/alarmPlaybackMode';
 import { COLORS } from '../src/theme';
 import AnimatedSplash from '../src/components/AnimatedSplash';
 
@@ -96,10 +100,11 @@ export default function RootLayout() {
   useEffect(() => {
     if (Platform.OS === 'web') return;
 
-    if (usesLegacyAlarmPlayback()) {
+    if (usesAlarmTimersAndKeepalive()) {
       scheduleAllAlarmTimers(alarms);
       void syncKeepalive(alarms);
-    } else {
+    }
+    if (usesIosFocusKeepaliveAlarm()) {
       void syncActiveAlarmToShortcuts(alarms);
     }
   }, [alarms]);
@@ -107,7 +112,7 @@ export default function RootLayout() {
   // ── Handle app coming back to foreground ─────────────────────────────────────
   // Recalculate timers (setTimeout times may have drifted if device was sleeping)
   useEffect(() => {
-    if (Platform.OS === 'web' || !usesLegacyAlarmPlayback()) return;
+    if (Platform.OS === 'web' || !usesAlarmTimersAndKeepalive()) return;
 
     const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
       alarmifyDebug('AppState', 'changed', { state });
@@ -128,7 +133,7 @@ export default function RootLayout() {
   // ── Cleanup on unmount ────────────────────────────────────────────────────────
   useEffect(() => {
     return () => {
-      if (usesLegacyAlarmPlayback()) cancelAllAlarmTimers();
+      if (usesAlarmTimersAndKeepalive()) cancelAllAlarmTimers();
     };
   }, []);
 

@@ -38,8 +38,9 @@ export default function ShortcutsSetupScreen() {
 
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           <Text style={styles.intro}>
-            On iPhone, Alarmify stores your song link. A Shortcuts automation at your alarm time
-            plays it in Spotify.
+            On iPhone, Alarmify keeps silent audio running until your alarm, then stops so your
+            Focus can turn off. A Shortcuts automation (you create outside this app) opens Spotify
+            using the track, album, or playlist link Alarmify exposes.
           </Text>
 
           {SHORTCUTS_SETUP_STEPS.map((step) => (
