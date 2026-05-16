@@ -7,6 +7,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { Alarm } from '../types';
+import { usesLegacyAlarmPlayback } from '../utils/alarmPlaybackMode';
 
 const STORAGE_KEY = 'alarmify_v1_alarms';
 
@@ -29,7 +30,7 @@ export async function persistAlarms(alarms: Alarm[]): Promise<void> {
 
 /** Cancels all previously scheduled notifications for an alarm, then re-creates them. */
 export async function scheduleAlarmNotifications(alarm: Alarm): Promise<string[]> {
-  if (Platform.OS === 'web') return [];
+  if (Platform.OS === 'web' || !usesLegacyAlarmPlayback()) return [];
 
   // Cancel existing
   await cancelAlarmNotifications(alarm);

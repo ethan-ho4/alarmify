@@ -39,7 +39,8 @@
     "react-native-web": "^0.21.0",
     "react-native-worklets": "^0.8.0",
     "react-native-worklets-core": "^1.6.3",
-    "zustand": "^4.5.0"
+    "zustand": "^4.5.0",
+    "alarmify-shortcuts": "file:./modules/alarmify-shortcuts"
   },
   "devDependencies": {
     "@babel/core": "^7.25.0",

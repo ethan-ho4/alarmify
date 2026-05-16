@@ -28,6 +28,8 @@ import {
   setKeepaliveDebugPaused,
 } from '../src/services/backgroundAudio';
 import { registerAlarmBackgroundTask } from '../src/services/backgroundTasks';
+import { syncActiveAlarmToShortcuts } from '../src/services/shortcutsBridge';
+import { usesLegacyAlarmPlayback } from '../src/utils/alarmPlaybackMode';
 import { COLORS } from '../src/theme';
 import AnimatedSplash from '../src/components/AnimatedSplash';
 
@@ -81,7 +83,9 @@ export default function RootLayout() {
     }
     const bootstrap = async () => {
       await requestNotificationPermission();
-      await registerAlarmBackgroundTask();
+      if (usesLegacyAlarmPlayback()) {
+        await registerAlarmBackgroundTask();
+      }
       await loadAuth();
       await loadAlarms();
     };
@@ -92,14 +96,18 @@ export default function RootLayout() {
   useEffect(() => {
     if (Platform.OS === 'web') return;
 
-    scheduleAllAlarmTimers(alarms);
-    void syncKeepalive(alarms);
+    if (usesLegacyAlarmPlayback()) {
+      scheduleAllAlarmTimers(alarms);
+      void syncKeepalive(alarms);
+    } else {
+      void syncActiveAlarmToShortcuts(alarms);
+    }
   }, [alarms]);
 
   // ── Handle app coming back to foreground ─────────────────────────────────────
   // Recalculate timers (setTimeout times may have drifted if device was sleeping)
   useEffect(() => {
-    if (Platform.OS === 'web') return;
+    if (Platform.OS === 'web' || !usesLegacyAlarmPlayback()) return;
 
     const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
       alarmifyDebug('AppState', 'changed', { state });
@@ -120,7 +128,7 @@ export default function RootLayout() {
   // ── Cleanup on unmount ────────────────────────────────────────────────────────
   useEffect(() => {
     return () => {
-      cancelAllAlarmTimers();
+      if (usesLegacyAlarmPlayback()) cancelAllAlarmTimers();
     };
   }, []);
 
@@ -128,6 +136,8 @@ export default function RootLayout() {
   // These fire if the alarm rings while Spotify isn't responding to Web API,
   // or if the user taps the notification manually.
   useEffect(() => {
+    if (!usesLegacyAlarmPlayback()) return;
+
     // App in foreground: notification received → JS timer already played it,
     // but this acts as a safety net if the timer was somehow missed.
     const subFg = Notifications.addNotificationReceivedListener(async (notification) => {
@@ -191,6 +201,7 @@ export default function RootLayout() {
         <Stack.Screen name="index"       options={{ headerShown: false }} />
         <Stack.Screen name="add-alarm"   options={{ presentation: 'modal', headerShown: false }} />
         <Stack.Screen name="song-search" options={{ presentation: 'modal', headerShown: false }} />
+        <Stack.Screen name="shortcuts-setup" options={{ presentation: 'modal', headerShown: false }} />
       </Stack>
     </GestureHandlerRootView>
   );

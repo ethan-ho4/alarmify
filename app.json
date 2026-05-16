@@ -15,6 +15,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.ethanho.alarmify",
+      "deploymentTarget": "16.0",
       "infoPlist": {
         "UIBackgroundModes": [
           "fetch",
@@ -49,7 +50,8 @@
         }
       ],
       "expo-secure-store",
-      "expo-web-browser"
+      "expo-web-browser",
+      "alarmify-shortcuts"
     ],
     "experiments": {
       "typedRoutes": true

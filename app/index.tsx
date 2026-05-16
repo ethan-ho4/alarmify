@@ -23,6 +23,8 @@ import { useStore } from '../src/store/useStore';
 import { useSpotifyAuth } from '../src/hooks/useSpotifyAuth';
 import { AlarmCard } from '../src/components/AlarmCard';
 import { AlarmHealthBar } from '../src/components/AlarmHealthBar';
+import { ShortcutsAlarmBar } from '../src/components/ShortcutsAlarmBar';
+import { usesShortcutsAlarmOnIos } from '../src/utils/alarmPlaybackMode';
 import { Alarm } from '../src/types';
 import { COLORS, FONTS, RADIUS, SHADOWS } from '../src/theme';
 
@@ -136,7 +138,7 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        <AlarmHealthBar />
+        {usesShortcutsAlarmOnIos() ? <ShortcutsAlarmBar /> : <AlarmHealthBar />}
 
         {/* ── Alarm count banner ──────────────────── */}
         {alarms.length > 0 && (

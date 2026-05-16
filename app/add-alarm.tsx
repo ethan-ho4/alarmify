@@ -23,6 +23,9 @@ import { createAlarm } from '../src/services/alarms';
 import { TimeWheelPicker } from '../src/components/TimeWheelPicker';
 import { COLORS, FONTS, RADIUS, SHADOWS } from '../src/theme';
 import { Alarm } from '../src/types';
+import { usesShortcutsAlarmOnIos } from '../src/utils/alarmPlaybackMode';
+import { hasSeenShortcutsSetup } from '../src/services/shortcutsSetupPrefs';
+import { SHORTCUTS_SETUP_ROUTE } from '../src/navigation/routes';
 
 LogBox.ignoreLogs(['VirtualizedLists should never be nested']);
 
@@ -71,6 +74,20 @@ export default function AddAlarmScreen() {
       await updateAlarm(updated);
     } else {
       await addAlarm(updated);
+    }
+
+    const needsSetup =
+      usesShortcutsAlarmOnIos() &&
+      updated.isEnabled &&
+      !!updated.track?.uri;
+
+    if (needsSetup) {
+      const seen = await hasSeenShortcutsSetup();
+      router.back();
+      if (!seen) {
+        router.push(SHORTCUTS_SETUP_ROUTE);
+      }
+      return;
     }
 
     router.back();

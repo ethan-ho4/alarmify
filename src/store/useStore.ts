@@ -16,6 +16,8 @@ import {
   cancelTimersForAlarm,
   scheduleAllAlarmTimers,
 } from '../services/alarmTimers';
+import { syncActiveAlarmToShortcuts } from '../services/shortcutsBridge';
+import { usesLegacyAlarmPlayback } from '../utils/alarmPlaybackMode';
 
 interface UserProfile {
   name: string;
@@ -58,26 +60,30 @@ export const useStore = create<AppState>((set, get) => ({
   loadAlarms: async () => {
     const alarms = await fetchAlarms();
     set({ alarms, alarmsLoaded: true });
-    // Restore JS timers after load (e.g. app restart)
-    scheduleAllAlarmTimers(alarms);
+    if (usesLegacyAlarmPlayback()) {
+      scheduleAllAlarmTimers(alarms);
+    }
+    await syncActiveAlarmToShortcuts(alarms);
   },
 
   addAlarm: async (alarm) => {
-    const ids = await scheduleAlarmNotifications(alarm);
+    const ids = usesLegacyAlarmPlayback() ? await scheduleAlarmNotifications(alarm) : [];
     const withIds = { ...alarm, notificationIds: ids };
     const alarms = [...get().alarms, withIds];
     set({ alarms });
     await persistAlarms(alarms);
-    scheduleTimersForAlarm(withIds);
+    if (usesLegacyAlarmPlayback()) scheduleTimersForAlarm(withIds);
+    await syncActiveAlarmToShortcuts(alarms);
   },
 
   updateAlarm: async (alarm) => {
-    const ids = await scheduleAlarmNotifications(alarm);
+    const ids = usesLegacyAlarmPlayback() ? await scheduleAlarmNotifications(alarm) : [];
     const withIds = { ...alarm, notificationIds: ids };
     const alarms = get().alarms.map((a) => (a.id === alarm.id ? withIds : a));
     set({ alarms });
     await persistAlarms(alarms);
-    scheduleTimersForAlarm(withIds);
+    if (usesLegacyAlarmPlayback()) scheduleTimersForAlarm(withIds);
+    await syncActiveAlarmToShortcuts(alarms);
   },
 
   deleteAlarm: async (id) => {
@@ -87,6 +93,7 @@ export const useStore = create<AppState>((set, get) => ({
     const alarms = get().alarms.filter((a) => a.id !== id);
     set({ alarms });
     await persistAlarms(alarms);
+    await syncActiveAlarmToShortcuts(alarms);
   },
 
   toggleAlarm: async (id) => {

@@ -37,4 +37,5 @@ export type RootStackParamList = {
   index: undefined;
   'add-alarm': { alarmId?: string } | undefined;
   'song-search': undefined;
+  'shortcuts-setup': undefined;
 };
