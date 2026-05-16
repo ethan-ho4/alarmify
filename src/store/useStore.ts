@@ -5,12 +5,17 @@
 import { create } from 'zustand';
 import { Alarm, SpotifyAuth, SpotifyTrack } from '../types';
 import {
-  loadAlarms,
+  loadAlarms as fetchAlarms,
   persistAlarms,
   scheduleAlarmNotifications,
   cancelAlarmNotifications,
 } from '../services/alarms';
-import { clearAuth, getUserProfile, loadAuth } from '../services/spotify';
+import { clearAuth, getUserProfile, loadAuth as fetchAuth, saveAuth } from '../services/spotify';
+import {
+  scheduleTimersForAlarm,
+  cancelTimersForAlarm,
+  scheduleAllAlarmTimers,
+} from '../services/alarmTimers';
 
 interface UserProfile {
   name: string;
@@ -48,11 +53,13 @@ export const useStore = create<AppState>((set, get) => ({
   // ── Alarms ────────────────────────────────────────────────────────────────
 
   alarms: [],
-  alarmsLoaded: false,
+  alarmsLoaded: true,
 
   loadAlarms: async () => {
-    const alarms = await loadAlarms();
+    const alarms = await fetchAlarms();
     set({ alarms, alarmsLoaded: true });
+    // Restore JS timers after load (e.g. app restart)
+    scheduleAllAlarmTimers(alarms);
   },
 
   addAlarm: async (alarm) => {
@@ -61,6 +68,7 @@ export const useStore = create<AppState>((set, get) => ({
     const alarms = [...get().alarms, withIds];
     set({ alarms });
     await persistAlarms(alarms);
+    scheduleTimersForAlarm(withIds);
   },
 
   updateAlarm: async (alarm) => {
@@ -69,11 +77,13 @@ export const useStore = create<AppState>((set, get) => ({
     const alarms = get().alarms.map((a) => (a.id === alarm.id ? withIds : a));
     set({ alarms });
     await persistAlarms(alarms);
+    scheduleTimersForAlarm(withIds);
   },
 
   deleteAlarm: async (id) => {
     const target = get().alarms.find((a) => a.id === id);
     if (target) await cancelAlarmNotifications(target);
+    cancelTimersForAlarm(id);
     const alarms = get().alarms.filter((a) => a.id !== id);
     set({ alarms });
     await persistAlarms(alarms);
@@ -93,7 +103,7 @@ export const useStore = create<AppState>((set, get) => ({
   authLoaded: false,
 
   loadAuth: async () => {
-    const auth = await loadAuth();
+    const auth = await fetchAuth();
     if (auth) {
       const profile = await getUserProfile();
       set({ auth, profile, authLoaded: true });
@@ -103,6 +113,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setAuth: async (auth) => {
+    await saveAuth(auth);           // persist to SecureStore so it survives app restarts
     const profile = await getUserProfile();
     set({ auth, profile });
   },

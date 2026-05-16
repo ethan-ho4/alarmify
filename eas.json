@@ -6,10 +6,16 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_SPOTIFY_CLIENT_ID": "31b987f72a35484090a8572cdf22d5cb"
+      }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_SPOTIFY_CLIENT_ID": "31b987f72a35484090a8572cdf22d5cb"
+      }
     }
   }
 }

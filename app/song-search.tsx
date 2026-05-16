@@ -18,6 +18,7 @@ import {
   Platform,
   Alert,
   ListRenderItem,
+  Keyboard,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
@@ -68,11 +69,13 @@ export default function SongSearchScreen() {
   }, [doSearch]);
 
   const handleSelect = useCallback((track: SpotifyTrack) => {
+    Keyboard.dismiss();
     setSelected((prev) => (prev?.id === track.id ? null : track));
   }, []);
 
   const handleConfirm = useCallback(() => {
     if (!selected) return;
+    Keyboard.dismiss();
     setPending(selected);
     router.back();
   }, [selected, setPending, router]);
@@ -90,7 +93,7 @@ export default function SongSearchScreen() {
 
   return (
     <View style={styles.root}>
-      <LinearGradient colors={['#0D1117', '#050508']} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={['#0D1117', '#050508']} style={StyleSheet.absoluteFill} pointerEvents="none" />
 
       <SafeAreaView style={styles.safe}>
         <KeyboardAvoidingView

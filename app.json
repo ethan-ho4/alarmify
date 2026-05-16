@@ -2,7 +2,7 @@
   "expo": {
     "name": "Alarmify",
     "slug": "alarmify",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "icon": "./alarmify_icon.png",
     "splash": {
       "image": "./assets/splash.png",
@@ -39,6 +39,7 @@
     "plugins": [
       "expo-dev-client",
       "expo-router",
+      "expo-av",
       [
         "expo-notifications",
         {

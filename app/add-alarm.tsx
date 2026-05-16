@@ -6,7 +6,6 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   Alert,
@@ -14,7 +13,6 @@ import {
   Platform,
   SafeAreaView,
   Image,
-  ScrollView,
   LogBox,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -23,11 +21,15 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useStore } from '../src/store/useStore';
 import { createAlarm } from '../src/services/alarms';
 import { TimeWheelPicker } from '../src/components/TimeWheelPicker';
-import { DaySelector } from '../src/components/DaySelector';
 import { COLORS, FONTS, RADIUS, SHADOWS } from '../src/theme';
 import { Alarm } from '../src/types';
 
 LogBox.ignoreLogs(['VirtualizedLists should never be nested']);
+
+function formatNowAsAlarmTime(): string {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
 
 export default function AddAlarmScreen() {
   const router     = useRouter();
@@ -43,9 +45,7 @@ export default function AddAlarmScreen() {
 
   const isEditing = !!existingAlarm;
 
-  const [time,  setTime]  = useState(existingAlarm?.time  ?? '07:00');
-  const [days,  setDays]  = useState(existingAlarm?.days  ?? [1, 2, 3, 4, 5]);
-  const [label, setLabel] = useState(existingAlarm?.label ?? '');
+  const [time,  setTime]  = useState(existingAlarm?.time  ?? formatNowAsAlarmTime());
   const [track, setTrack] = useState(existingAlarm?.track ?? null);
 
   // Pick up a track selected from the song-search screen
@@ -61,8 +61,8 @@ export default function AddAlarmScreen() {
     const updated: Alarm = {
       ...base,
       time,
-      days,
-      label,
+      days: [],
+      label: '',
       track,
       isEnabled: existingAlarm?.isEnabled ?? true,
     };
@@ -74,7 +74,7 @@ export default function AddAlarmScreen() {
     }
 
     router.back();
-  }, [existingAlarm, time, days, label, track, isEditing, addAlarm, updateAlarm, router]);
+  }, [existingAlarm, time, track, isEditing, addAlarm, updateAlarm, router]);
 
   const handleDelete = useCallback(() => {
     if (!existingAlarm) return;
@@ -95,12 +95,11 @@ export default function AddAlarmScreen() {
 
   // ─── format time for display in header
   const [hh, mm] = time.split(':').map(Number);
-  const period  = hh >= 12 ? 'PM' : 'AM';
   const hDisplay = is24Hour ? String(hh).padStart(2, '0') : String(hh % 12 || 12);
 
   return (
     <View style={styles.root}>
-      <LinearGradient colors={['#0D1117', '#050508']} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={['#0D1117', '#050508']} style={StyleSheet.absoluteFill} pointerEvents="none" />
 
       <SafeAreaView style={styles.safe}>
         <KeyboardAvoidingView
@@ -122,45 +121,14 @@ export default function AddAlarmScreen() {
             )}
           </View>
 
-          <ScrollView 
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={[styles.scroll, { alignItems: 'center' }]}
-            keyboardShouldPersistTaps="handled"
-          >
+          <View style={[styles.content, { alignItems: 'center' }]}>
             {/* ── Time Preview ─────────────────────── */}
             <View style={styles.timePreview}>
               <Text style={styles.timePreviewText}>{hDisplay}:{String(mm).padStart(2, '0')}</Text>
             </View>
 
             {/* ── Time Wheel ───────────────────────── */}
-            <TimeWheelPicker value={time} onChange={setTime} is24Hour={is24Hour} />
-
-            {/* ── Section: Repeat ──────────────────── */}
-            <View style={[styles.section, { width: '100%' }]}>
-              <Text style={styles.sectionLabel}>REPEAT</Text>
-              <View style={styles.card}>
-                <DaySelector selected={days} onChange={setDays} />
-                <Text style={styles.repeatHint}>
-                  {days.length === 0 ? 'One-time alarm' : 'Repeats weekly on selected days'}
-                </Text>
-              </View>
-            </View>
-
-            {/* ── Section: Label ───────────────────── */}
-            <View style={[styles.section, { width: '100%' }]}>
-              <Text style={styles.sectionLabel}>LABEL</Text>
-              <View style={[styles.card, styles.inputCard]}>
-                <Ionicons name="pencil-outline" size={18} color={COLORS.textMuted} />
-                <TextInput
-                  style={styles.input}
-                  value={label}
-                  onChangeText={setLabel}
-                  placeholder="Alarm label…"
-                  placeholderTextColor={COLORS.textMuted}
-                  maxLength={40}
-                />
-              </View>
-            </View>
+            <TimeWheelPicker value={time} onChange={setTime} is24Hour={is24Hour} compact />
 
             {/* ── Section: Song ────────────────────── */}
             <View style={[styles.section, { width: '100%' }]}>
@@ -201,7 +169,7 @@ export default function AddAlarmScreen() {
                 </TouchableOpacity>
               )}
             </View>
-          </ScrollView>
+          </View>
 
           {/* ── Save Button ──────────────────────── */}
           <View style={styles.footer}>
@@ -250,27 +218,23 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-end',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
     gap: 6,
   },
   timePreviewText: {
     fontFamily: FONTS.bold,
-    fontSize: 72,
+    fontSize: 56,
     color: COLORS.textPrimary,
-    letterSpacing: -3,
-    lineHeight: 80,
-  },
-  timePreviewPeriod: {
-    fontFamily: FONTS.medium,
-    fontSize: 24,
-    color: COLORS.primary,
-    marginBottom: 10,
+    letterSpacing: -2,
+    lineHeight: 62,
   },
 
-  scroll: {
+  content: {
+    flex: 1,
     paddingHorizontal: 16,
-    paddingBottom: 24,
-    gap: 20,
+    paddingBottom: 12,
+    gap: 16,
+    justifyContent: 'flex-start',
   },
 
   section: { gap: 8 },
@@ -288,25 +252,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
     gap: 12,
-  },
-  repeatHint: {
-    fontFamily: FONTS.regular,
-    fontSize: 12,
-    color: COLORS.textMuted,
-    textAlign: 'center',
-  },
-
-  inputCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 14,
-  },
-  input: {
-    flex: 1,
-    fontFamily: FONTS.regular,
-    fontSize: 16,
-    color: COLORS.textPrimary,
   },
 
   trackRow: {

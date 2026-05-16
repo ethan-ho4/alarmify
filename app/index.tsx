@@ -22,6 +22,7 @@ import { useRouter } from 'expo-router';
 import { useStore } from '../src/store/useStore';
 import { useSpotifyAuth } from '../src/hooks/useSpotifyAuth';
 import { AlarmCard } from '../src/components/AlarmCard';
+import { AlarmHealthBar } from '../src/components/AlarmHealthBar';
 import { Alarm } from '../src/types';
 import { COLORS, FONTS, RADIUS, SHADOWS } from '../src/theme';
 
@@ -81,6 +82,7 @@ export default function HomeScreen() {
       <LinearGradient
         colors={['#0D1117', '#050508']}
         style={StyleSheet.absoluteFill}
+        pointerEvents="none"
       />
 
       <SafeAreaView style={styles.safe}>
@@ -134,6 +136,8 @@ export default function HomeScreen() {
           </View>
         </View>
 
+        <AlarmHealthBar />
+
         {/* ── Alarm count banner ──────────────────── */}
         {alarms.length > 0 && (
           <Text style={styles.countLabel}>
@@ -167,7 +171,8 @@ export default function HomeScreen() {
           colors={[COLORS.primary, '#17A349']}
           style={styles.fabGradient}
         >
-          <Ionicons name="add" size={32} color="#fff" />
+          <View style={{ width: 24, height: 3, backgroundColor: '#fff', position: 'absolute', borderRadius: 2 }} />
+          <View style={{ width: 3, height: 24, backgroundColor: '#fff', position: 'absolute', borderRadius: 2 }} />
         </LinearGradient>
       </TouchableOpacity>
     </View>

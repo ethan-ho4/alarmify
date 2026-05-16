@@ -7,16 +7,13 @@ import React, { useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
-  FlatList,
   StyleSheet,
   ViewToken,
-  ListRenderItem,
-  useWindowDimensions,
   Animated,
 } from 'react-native';
 import { COLORS, FONTS, RADIUS } from '../theme';
 
-const ITEM_H    = 64;
+const DEFAULT_ITEM_H = 64;
 const VISIBLE   = 5; // items visible at once
 const PADDING   = Math.floor(VISIBLE / 2); // ghost rows top & bottom
 
@@ -26,20 +23,22 @@ const MINUTES  = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, '0')
 // ── Single Wheel ─────────────────────────────────────────────────────────────
 
 interface WheelProps {
-  data:          string[];
-  selectedIndex: number;
-  onSelect:      (index: number) => void;
-  width:         number;
+  data:           string[];
+  selectedIndex:  number;
+  onSelect:       (index: number) => void;
+  width:          number;
+  itemHeight:     number;
+  itemFontSize:   number;
 }
 
-function Wheel({ data, selectedIndex, onSelect, width }: WheelProps) {
+function Wheel({ data, selectedIndex, onSelect, width, itemHeight, itemFontSize }: WheelProps) {
   const ref = useRef<any>(null);
 
   const LOOPS = 100;
   const middleLoop = Math.floor(LOOPS / 2);
   const initialIndex = middleLoop * data.length + selectedIndex;
 
-  const scrollY = useRef(new Animated.Value(initialIndex * ITEM_H)).current;
+  const scrollY = useRef(new Animated.Value(initialIndex * itemHeight)).current;
 
   // Create a large repeated array for infinite scrolling
   const repeatedData = Array.from({ length: data.length * LOOPS }, (_, i) => data[i % data.length]);
@@ -79,17 +78,17 @@ function Wheel({ data, selectedIndex, onSelect, width }: WheelProps) {
 
   const renderItem = ({ item, index }: { item: string, index: number }) => {
     if (!item) {
-      return <View style={{ height: ITEM_H, width }} />; // empty ghost rows
+      return <View style={{ height: itemHeight, width }} />; // empty ghost rows
     }
 
-    const centerOffset = (index - PADDING) * ITEM_H;
+    const centerOffset = (index - PADDING) * itemHeight;
 
     const inputRange = [
-      centerOffset - ITEM_H * 2,
-      centerOffset - ITEM_H,
+      centerOffset - itemHeight * 2,
+      centerOffset - itemHeight,
       centerOffset,
-      centerOffset + ITEM_H,
-      centerOffset + ITEM_H * 2,
+      centerOffset + itemHeight,
+      centerOffset + itemHeight * 2,
     ];
 
     const scale = scrollY.interpolate({
@@ -111,8 +110,8 @@ function Wheel({ data, selectedIndex, onSelect, width }: WheelProps) {
     });
 
     return (
-      <Animated.View style={[styles.item, { height: ITEM_H, width, opacity, transform: [{ perspective: 800 }, { rotateX }, { scale }] }]}>
-        <Text style={styles.itemText}>{item}</Text>
+      <Animated.View style={[styles.item, { height: itemHeight, width, opacity, transform: [{ perspective: 800 }, { rotateX }, { scale }] }]}>
+        <Text style={[styles.itemText, { fontSize: itemFontSize }]}>{item}</Text>
       </Animated.View>
     );
   };
@@ -124,14 +123,14 @@ function Wheel({ data, selectedIndex, onSelect, width }: WheelProps) {
       keyExtractor={(_, i) => String(i)}
       renderItem={renderItem}
       showsVerticalScrollIndicator={false}
-      snapToInterval={ITEM_H}
+      snapToInterval={itemHeight}
       decelerationRate="fast"
       onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: true })}
       scrollEventThrottle={16}
       onViewableItemsChanged={onViewableItemsChanged}
       viewabilityConfig={viewabilityConfig}
-      style={{ height: ITEM_H * VISIBLE, width }}
-      getItemLayout={(_, idx) => ({ length: ITEM_H, offset: ITEM_H * idx, index: idx })}
+      style={{ height: itemHeight * VISIBLE, width }}
+      getItemLayout={(_, idx) => ({ length: itemHeight, offset: itemHeight * idx, index: idx })}
     />
   );
 }
@@ -142,14 +141,20 @@ interface Props {
   value:    string; // "HH:mm"
   onChange: (value: string) => void;
   is24Hour?: boolean; // kept in signature for compat, wheel is always 24h internally
+  /** Smaller row height / typography for one-screen layouts (e.g. add alarm). */
+  compact?: boolean;
 }
 
-export function TimeWheelPicker({ value, onChange }: Props) {
+export function TimeWheelPicker({ value, onChange, compact }: Props) {
   const [hStr, mStr] = value.split(':');
   const hIdx = parseInt(hStr, 10) || 0;
   const mIdx = parseInt(mStr, 10) || 0;
 
-  const wheelW = 75;
+  const wheelW = compact ? 68 : 75;
+  const itemH = compact ? 48 : DEFAULT_ITEM_H;
+  const itemFontSize = compact ? 26 : 32;
+  const colonSize = compact ? 32 : 38;
+  const sepMarginTop = compact ? -4 : -8;
 
   const setHour   = (i: number) => onChange(`${String(i).padStart(2, '0')}:${mStr}`);
   const setMinute = (i: number) => onChange(`${hStr}:${String(i).padStart(2, '0')}`);
@@ -157,15 +162,29 @@ export function TimeWheelPicker({ value, onChange }: Props) {
   return (
     <View style={styles.wrapper}>
       {/* Selection highlight */}
-      <View pointerEvents="none" style={[styles.highlight, { top: ITEM_H * PADDING }]} />
+      <View pointerEvents="none" style={[styles.highlight, { top: itemH * PADDING, height: itemH }]} />
 
-      <Wheel data={HOURS_24} selectedIndex={hIdx} onSelect={setHour} width={wheelW} />
+      <Wheel
+        data={HOURS_24}
+        selectedIndex={hIdx}
+        onSelect={setHour}
+        width={wheelW}
+        itemHeight={itemH}
+        itemFontSize={itemFontSize}
+      />
 
-      <View style={styles.separator}>
-        <Text style={styles.colon}>:</Text>
+      <View style={[styles.separator, { marginTop: sepMarginTop }]}>
+        <Text style={[styles.colon, { fontSize: colonSize }]}>:</Text>
       </View>
 
-      <Wheel data={MINUTES} selectedIndex={mIdx} onSelect={setMinute} width={wheelW} />
+      <Wheel
+        data={MINUTES}
+        selectedIndex={mIdx}
+        onSelect={setMinute}
+        width={wheelW}
+        itemHeight={itemH}
+        itemFontSize={itemFontSize}
+      />
     </View>
   );
 }
@@ -184,7 +203,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    height: ITEM_H,
+    height: DEFAULT_ITEM_H,
     borderTopWidth: 1,
     borderBottomWidth: 1,
     borderColor: COLORS.primary + '60',

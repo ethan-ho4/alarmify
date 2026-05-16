@@ -4,59 +4,170 @@
 //  and bootstraps global state.
 // ─────────────────────────────────────────────
 
+import '../src/services/backgroundTasks';
 import React, { useEffect, useState } from 'react';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Platform, AppState, AppStateStatus } from 'react-native';
 import { useStore } from '../src/store/useStore';
-import { playTrack } from '../src/services/spotify';
+import { playTrack, formatPlaybackDiagnosis } from '../src/services/spotify';
 import { requestNotificationPermission } from '../src/services/alarms';
+import { isAlarmifyDebugEnabled, alarmifyDebug } from '../src/utils/alarmifyDebug';
+import {
+  scheduleAllAlarmTimers,
+  cancelAllAlarmTimers,
+} from '../src/services/alarmTimers';
+import {
+  startBackgroundKeepalive,
+  stopBackgroundKeepalive,
+  touchBackgroundKeepalive,
+  isKeepaliveDebugPaused,
+  setKeepaliveDebugPaused,
+} from '../src/services/backgroundAudio';
+import { registerAlarmBackgroundTask } from '../src/services/backgroundTasks';
 import { COLORS } from '../src/theme';
 import AnimatedSplash from '../src/components/AnimatedSplash';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
 
-// Configure foreground notification behaviour
+// ── Notification foreground behaviour ─────────────────────────────────────────
+// Do not surface alert/banner while the user is in the app (alarm playback is driven by timers).
+// Scheduled notification sound may still fire as a fallback when appropriate.
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowAlert: false,
     shouldPlaySound: true,
-    shouldSetBadge:  false,
-    shouldShowBanner: true,
-    shouldShowList: true,
+    shouldSetBadge: false,
+    shouldShowBanner: false,
+    shouldShowList: false,
   }),
 });
+
+// ── Keepalive management ───────────────────────────────────────────────────────
+// Start the silent audio loop whenever there are active alarm timers.
+// Stop it when no alarms are enabled (to save battery).
+async function syncKeepalive(alarms: import('../src/types').Alarm[]) {
+  if (Platform.OS === 'web') return;
+
+  const hasEnabled = alarms.some((a) => a.isEnabled && a.track?.uri);
+
+  if (hasEnabled) {
+    if (!isKeepaliveDebugPaused()) {
+      await startBackgroundKeepalive();
+    }
+  } else {
+    await stopBackgroundKeepalive();
+    setKeepaliveDebugPaused(false);
+  }
+}
 
 export default function RootLayout() {
   const loadAlarms = useStore((s) => s.loadAlarms);
   const loadAuth   = useStore((s) => s.loadAuth);
-  const [showSplash, setShowSplash] = useState(true);
+  const alarms     = useStore((s) => s.alarms);
+  const [showSplash, setShowSplash] = useState(Platform.OS !== 'web');
 
+  // ── Bootstrap ────────────────────────────────────────────────────────────────
   useEffect(() => {
-    // Bootstrap
-    requestNotificationPermission();
-    loadAlarms();
-    loadAuth();
+    if (isAlarmifyDebugEnabled()) {
+      console.log(
+        '[Alarmify] Verbose logging ON: Metro/Xcode logs show [AlarmifyDebug …] lines. '
+        + 'Production: set EXPO_PUBLIC_ALARMIFY_DEBUG=1 in eas.json env for a build.',
+      );
+    }
+    const bootstrap = async () => {
+      await requestNotificationPermission();
+      await registerAlarmBackgroundTask();
+      await loadAuth();
+      await loadAlarms();
+    };
+    bootstrap();
+  }, [loadAlarms, loadAuth]);
 
-    // When a notification is RECEIVED while the app is in the foreground → play immediately
-    const subFg = Notifications.addNotificationReceivedListener(async (notification) => {
-      const data = notification.request.content.data as { trackUri?: string };
-      if (data?.trackUri) {
-        await playTrack(data.trackUri);
+  // ── Reschedule timers + keepalive whenever alarms change ─────────────────────
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+
+    scheduleAllAlarmTimers(alarms);
+    void syncKeepalive(alarms);
+  }, [alarms]);
+
+  // ── Handle app coming back to foreground ─────────────────────────────────────
+  // Recalculate timers (setTimeout times may have drifted if device was sleeping)
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+
+    const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
+      alarmifyDebug('AppState', 'changed', { state });
+      const currentAlarms = useStore.getState().alarms;
+      const hasEnabled = currentAlarms.some((a) => a.isEnabled && a.track?.uri);
+
+      if (state === 'active') {
+        scheduleAllAlarmTimers(currentAlarms);
+        void syncKeepalive(currentAlarms);
+      } else if ((state === 'background' || state === 'inactive') && hasEnabled && !isKeepaliveDebugPaused()) {
+        void touchBackgroundKeepalive();
       }
     });
 
-    // When user TAPS a notification (app in background/closed) → play
-    const subBg = Notifications.addNotificationResponseReceivedListener(async (response) => {
-      const data = response.notification.request.content.data as {
-        trackUri?: string;
-      };
+    return () => sub.remove();
+  }, []);
+
+  // ── Cleanup on unmount ────────────────────────────────────────────────────────
+  useEffect(() => {
+    return () => {
+      cancelAllAlarmTimers();
+    };
+  }, []);
+
+  // ── Notification listeners (backup path) ─────────────────────────────────────
+  // These fire if the alarm rings while Spotify isn't responding to Web API,
+  // or if the user taps the notification manually.
+  useEffect(() => {
+    // App in foreground: notification received → JS timer already played it,
+    // but this acts as a safety net if the timer was somehow missed.
+    const subFg = Notifications.addNotificationReceivedListener(async (notification) => {
+      const data = notification.request.content.data as { trackUri?: string; alarmId?: string };
+      alarmifyDebug('Notifications', 'addNotificationReceivedListener', {
+        appState: AppState.currentState,
+        hasTrackUri: !!data?.trackUri,
+      });
       if (data?.trackUri) {
-        await playTrack(data.trackUri);
+        // Only play if we haven't already played via the JS timer
+        const playback = await playTrack(data.trackUri, {
+          context: 'foreground',
+          alarmId: data.alarmId,
+        });
+        alarmifyDebug('Notifications', 'playTrack (foreground)', {
+          ok: playback.ok,
+          channel: playback.channel,
+          diagnosis: formatPlaybackDiagnosis(playback),
+        });
+      }
+    });
+
+    // User tapped the notification banner (app was killed / unresponsive).
+    // This is the last-resort path.
+    const subBg = Notifications.addNotificationResponseReceivedListener(async (response) => {
+      const data = response.notification.request.content.data as { trackUri?: string; alarmId?: string };
+      alarmifyDebug('Notifications', 'addNotificationResponseReceivedListener (tap)', {
+        appState: AppState.currentState,
+        hasTrackUri: !!data?.trackUri,
+      });
+      if (data?.trackUri) {
+        const playback = await playTrack(data.trackUri, {
+          context: 'tap',
+          alarmId: data.alarmId,
+        });
+        alarmifyDebug('Notifications', 'playTrack (tap)', {
+          ok: playback.ok,
+          channel: playback.channel,
+          diagnosis: formatPlaybackDiagnosis(playback),
+        });
       }
     });
 
@@ -64,7 +175,7 @@ export default function RootLayout() {
       subFg.remove();
       subBg.remove();
     };
-  }, [loadAlarms, loadAuth]);
+  }, []);
 
   return (
     <GestureHandlerRootView style={styles.root}>

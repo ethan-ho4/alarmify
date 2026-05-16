@@ -14,12 +14,9 @@ import { useStore } from '../store/useStore';
 
 WebBrowser.maybeCompleteAuthSession();
 
-const REDIRECT_URI = makeRedirectUri();
-console.log('\n\n======================================================');
-console.log('📌 REQUIRED SPOTIFY SETTING');
-console.log('Add this exact Redirect URI to your Spotify Dashboard:');
-console.log(REDIRECT_URI);
-console.log('======================================================\n\n');
+// Must match the redirect URI registered in your Spotify Developer Dashboard.
+// Register exactly: alarmify://auth
+const REDIRECT_URI = makeRedirectUri({ scheme: 'alarmify', path: 'auth' });
 
 function generateState(): string {
   return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
