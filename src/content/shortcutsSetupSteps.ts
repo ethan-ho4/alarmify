@@ -32,4 +32,4 @@ export const SHORTCUTS_SETUP_STEPS: ShortcutsSetupStep[] = [
 ];
 
 export const SHORTCUTS_SETUP_FOOTNOTE =
-  'At alarm time Alarmify stops silent audio and ends its session so Focus turns off. Your automation opens Spotify — not Alarmify itself.';
+  'At alarm time Alarmify also tries the Spotify Web API while stopping silent audio (Focus turns off and your automation can open Spotify). Either path may start playback.';

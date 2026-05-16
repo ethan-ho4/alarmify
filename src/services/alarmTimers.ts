@@ -93,9 +93,23 @@ async function onAlarmFired(alarm: Alarm): Promise<void> {
   if (usesIosFocusKeepaliveAlarm()) {
     const alarms = useStore.getState().alarms;
     await syncActiveAlarmToShortcuts(alarms);
-    alarmifyDebug('AlarmTimer', 'iOS Focus path: synced URI, stopping keepalive', {
-      alarmId: alarm.id,
-    });
+
+    const uri = alarm.track?.uri;
+    if (uri) {
+      alarmifyDebug('AlarmTimer', 'iOS Focus path: starting playTrack (parallel)', {
+        alarmId: alarm.id,
+        uri,
+      });
+      void playTrack(uri, { context: 'auto' }).then((playback) => {
+        alarmifyDebug('AlarmTimer', 'iOS Focus path: playTrack finished', {
+          ok: playback.ok,
+          channel: playback.channel,
+          diagnosis: formatPlaybackDiagnosis(playback),
+        });
+      });
+    }
+
+    alarmifyDebug('AlarmTimer', 'iOS Focus path: stopping keepalive', { alarmId: alarm.id });
     await stopBackgroundKeepalive();
     disableAlarmAfterFired(alarm.id);
     return;

@@ -23,7 +23,7 @@ Turn off **Ask Before Running**.
 
 ## 4. Overnight
 
-Do **not** force-quit Alarmify before the alarm. Silent audio keeps the app scheduled; when the alarm fires, audio stops, Focus turns off, and your automation should open Spotify.
+Do **not** force-quit Alarmify before the alarm. Silent audio keeps the app scheduled; when the alarm fires, Alarmify stops silent audio, tries the Spotify Web API, and Focus turns off so your automation can open Spotify. Either path may start playback.
 
 ## Test
 
