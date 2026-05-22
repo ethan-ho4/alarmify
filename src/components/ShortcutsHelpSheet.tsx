@@ -32,7 +32,7 @@ export function ShortcutsHelpSheet({ visible, onClose, onDone }: Props) {
           <View style={styles.handle} />
           <Text style={styles.title}>iOS Shortcuts setup</Text>
           <Text style={styles.subtitle}>
-            Configure Focus and Shortcuts on your iPhone once. Alarmify handles timing and the
+            Configure Focus and Shortcuts on your iPhone once. Ethan&apos;s Alarm handles timing and the
             Spotify link; your automation opens Spotify when Focus turns off.
           </Text>
 

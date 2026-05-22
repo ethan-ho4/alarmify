@@ -13,10 +13,12 @@
     "@expo/metro-runtime": "~6.1.2",
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "alarmify-shortcuts": "file:./modules/alarmify-shortcuts",
     "expo": "~54.0.0",
     "expo-auth-session": "~7.0.10",
     "expo-av": "~16.0.8",
     "expo-blur": "~15.0.8",
+    "expo-brightness": "~14.0.8",
     "expo-constants": "~18.0.13",
     "expo-crypto": "~15.0.8",
     "expo-dev-client": "~6.0.20",
@@ -39,8 +41,7 @@
     "react-native-web": "^0.21.0",
     "react-native-worklets": "^0.8.0",
     "react-native-worklets-core": "^1.6.3",
-    "zustand": "^4.5.0",
-    "alarmify-shortcuts": "file:./modules/alarmify-shortcuts"
+    "zustand": "^4.5.0"
   },
   "devDependencies": {
     "@babel/core": "^7.25.0",

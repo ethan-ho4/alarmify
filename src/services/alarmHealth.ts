@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────
-//  Alarmify – System health for alarm reliability
+//  Ethan's Alarm – System health for alarm reliability
 // ─────────────────────────────────────────────
 
 import {
@@ -11,6 +11,7 @@ import {
 import { isBackgroundTaskRegistered } from './backgroundTasks';
 import { getValidToken, getSpotifyConnectDeviceCount } from './spotify';
 import { useStore } from '../store/useStore';
+import { hasEnabledAlarmWithMedia } from '../utils/media';
 
 export type HealthItem = {
   label: string;
@@ -30,9 +31,9 @@ export type AlarmHealthSnapshot = {
 
 export async function fetchAlarmHealth(): Promise<AlarmHealthSnapshot> {
   const alarms = useStore.getState().alarms;
-  const hasEnabledAlarms = alarms.some((a) => a.isEnabled && a.track?.uri);
+  const hasEnabledAlarms = hasEnabledAlarmWithMedia(alarms);
 
-  const token = await getValidToken();
+  const token = hasEnabledAlarms ? await getValidToken() : null;
   const hijacked = isKeepaliveHijacked();
   const actuallyPlaying = hasEnabledAlarms ? await isKeepaliveActuallyPlaying() : false;
 
@@ -44,7 +45,7 @@ export async function fetchAlarmHealth(): Promise<AlarmHealthSnapshot> {
         ? 'Silent keepalive: expo-av should report playing even though you hear nothing. Raise EXPO_PUBLIC_ALARMIFY_KEEPALIVE_VOLUME temporarily if you need to verify audio.'
         : null;
 
-  const connectCount = token ? await getSpotifyConnectDeviceCount() : null;
+  const connectCount = hasEnabledAlarms && token ? await getSpotifyConnectDeviceCount() : null;
 
   const items: HealthItem[] = [
     {
@@ -53,22 +54,22 @@ export async function fetchAlarmHealth(): Promise<AlarmHealthSnapshot> {
       detail: !hasEnabledAlarms
         ? 'No active alarms'
         : hijacked
-          ? 'Interrupted — reopen Alarmify'
+          ? "Interrupted — reopen Ethan's Alarm"
           : actuallyPlaying
             ? `Playing · ${getKeepaliveVolumeModeLabel()}`
             : `Not playing — JS timers may not fire. ${getKeepaliveVolumeModeLabel()}`,
     },
     {
-      label: 'Spotify auth',
-      ok: !!token,
-      detail: token ? 'Token valid' : 'Sign in to Spotify',
+      label: token ? 'Spotify beta auth' : 'Spotify link mode',
+      ok: true,
+      detail: token ? 'Token valid for beta playback' : 'Using saved links; no Spotify login needed',
     },
     {
-      label: 'Spotify Connect',
-      ok: connectCount != null && connectCount > 0,
+      label: token ? 'Spotify Connect' : 'Public playback',
+      ok: !token || (connectCount != null && connectCount > 0),
       detail:
         !token
-          ? 'Sign in to check'
+          ? 'Opens the saved Spotify link at alarm time'
           : connectCount == null
             ? 'Could not load devices — check network'
             : connectCount === 0

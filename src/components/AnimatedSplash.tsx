@@ -11,6 +11,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import * as SplashScreen from 'expo-splash-screen';
+import { COLORS } from '../theme';
 
 const { width } = Dimensions.get('window');
 
@@ -36,7 +37,7 @@ export default function AnimatedSplash({ onAnimationComplete }: AnimatedSplashPr
         withTiming(0, { duration: 250, easing: Easing.inOut(Easing.ease) })
       ),
       -1,
-      true
+      true,
     );
 
     noteTranslateY.value = withRepeat(
@@ -45,13 +46,13 @@ export default function AnimatedSplash({ onAnimationComplete }: AnimatedSplashPr
         withTiming(0, { duration: 350, easing: Easing.in(Easing.ease) })
       ),
       -1,
-      true
+      true,
     );
 
     // Loading bar animation (0 to 100% over 2.5 seconds)
     progressWidth.value = withTiming(
-      width * 0.6, 
-      { duration: 2500, easing: Easing.bezier(0.25, 0.1, 0.25, 1) }, 
+      width * 0.6,
+      { duration: 2500, easing: Easing.bezier(0.25, 0.1, 0.25, 1) },
       (finished) => {
         if (finished) {
           // Fade out the whole splash screen
@@ -59,7 +60,7 @@ export default function AnimatedSplash({ onAnimationComplete }: AnimatedSplashPr
             runOnJS(onAnimationComplete)();
           });
         }
-      }
+      },
     );
   }, []);
 
@@ -67,27 +68,27 @@ export default function AnimatedSplash({ onAnimationComplete }: AnimatedSplashPr
     return {
       transform: [
         { translateY: noteTranslateY.value },
-        { rotate: `${noteRotation.value}deg` }
-      ]
+        { rotate: `${noteRotation.value}deg` },
+      ],
     };
   });
 
   const progressStyle = useAnimatedStyle(() => {
     return {
-      width: progressWidth.value
+      width: progressWidth.value,
     };
   });
 
   const containerStyle = useAnimatedStyle(() => {
     return {
-      opacity: opacity.value
+      opacity: opacity.value,
     };
   });
 
   return (
     <Animated.View style={[styles.container, containerStyle]}>
       <Animated.View style={noteStyle}>
-        <Ionicons name="musical-notes" size={100} color="#1DB954" />
+        <Ionicons name="musical-notes" size={100} color={COLORS.primary} />
       </Animated.View>
 
       <View style={styles.barContainer}>
@@ -115,7 +116,7 @@ const styles = StyleSheet.create({
   },
   barFill: {
     height: '100%',
-    backgroundColor: '#1DB954',
+    backgroundColor: COLORS.primary,
     borderRadius: 2,
-  }
+  },
 });

@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────
-//  Alarmify – Add / Edit Alarm Screen
+//  Ethan's Alarm – Add / Edit Alarm Screen
 // ─────────────────────────────────────────────
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -17,15 +17,15 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, type Href } from 'expo-router';
 import { useStore } from '../src/store/useStore';
 import { createAlarm } from '../src/services/alarms';
 import { TimeWheelPicker } from '../src/components/TimeWheelPicker';
 import { COLORS, FONTS, RADIUS, SHADOWS } from '../src/theme';
-import { Alarm } from '../src/types';
-import { usesShortcutsAlarmOnIos } from '../src/utils/alarmPlaybackMode';
-import { hasSeenShortcutsSetup } from '../src/services/shortcutsSetupPrefs';
-import { SHORTCUTS_SETUP_ROUTE } from '../src/navigation/routes';
+import { Alarm, SpotifyMedia } from '../src/types';
+import { DEFAULT_SPOTIFY_MEDIA } from '../src/config/spotifyBeta';
+import { findNearbyEnabledAlarm } from '../src/utils/alarmConflicts';
+import { getAlarmMedia, getMediaImageUrl, getMediaKindLabel, getMediaSubtitle, getMediaTitle } from '../src/utils/media';
 
 LogBox.ignoreLogs(['VirtualizedLists should never be nested']);
 
@@ -35,29 +35,31 @@ function formatNowAsAlarmTime(): string {
 }
 
 export default function AddAlarmScreen() {
-  const router     = useRouter();
+  const router = useRouter();
   const { alarmId } = useLocalSearchParams<{ alarmId?: string }>();
 
   const existingAlarm = useStore((s) => s.alarms.find((a) => a.id === alarmId));
-  const addAlarm      = useStore((s) => s.addAlarm);
-  const updateAlarm   = useStore((s) => s.updateAlarm);
-  const deleteAlarm   = useStore((s) => s.deleteAlarm);
-  const pendingTrack  = useStore((s) => s.pendingTrack);
-  const setPending    = useStore((s) => s.setPendingTrack);
-  const is24Hour      = useStore((s) => s.is24Hour);
+  const alarms = useStore((s) => s.alarms);
+  const addAlarm = useStore((s) => s.addAlarm);
+  const updateAlarm = useStore((s) => s.updateAlarm);
+  const deleteAlarm = useStore((s) => s.deleteAlarm);
+  const pendingMedia = useStore((s) => s.pendingMedia);
+  const setPendingMedia = useStore((s) => s.setPendingMedia);
+  const is24Hour = useStore((s) => s.is24Hour);
 
   const isEditing = !!existingAlarm;
 
-  const [time,  setTime]  = useState(existingAlarm?.time  ?? formatNowAsAlarmTime());
-  const [track, setTrack] = useState(existingAlarm?.track ?? null);
+  const [time, setTime] = useState(existingAlarm?.time ?? formatNowAsAlarmTime());
+  const [media, setMedia] = useState<SpotifyMedia | null>(
+    existingAlarm ? getAlarmMedia(existingAlarm) : null,
+  );
 
-  // Pick up a track selected from the song-search screen
   useEffect(() => {
-    if (pendingTrack) {
-      setTrack(pendingTrack);
-      setPending(null);
+    if (pendingMedia) {
+      setMedia(pendingMedia);
+      setPendingMedia(null);
     }
-  }, [pendingTrack, setPending]);
+  }, [pendingMedia, setPendingMedia]);
 
   const handleSave = useCallback(async () => {
     const base: Alarm = existingAlarm ?? createAlarm();
@@ -66,32 +68,39 @@ export default function AddAlarmScreen() {
       time,
       days: [],
       label: '',
-      track,
+      media: media ?? DEFAULT_SPOTIFY_MEDIA,
       isEnabled: existingAlarm?.isEnabled ?? true,
     };
 
-    if (isEditing) {
-      await updateAlarm(updated);
-    } else {
-      await addAlarm(updated);
-    }
-
-    const needsSetup =
-      usesShortcutsAlarmOnIos() &&
-      updated.isEnabled &&
-      !!updated.track?.uri;
-
-    if (needsSetup) {
-      const seen = await hasSeenShortcutsSetup();
-      router.back();
-      if (!seen) {
-        router.push(SHORTCUTS_SETUP_ROUTE);
+    const save = async () => {
+      if (isEditing) {
+        await updateAlarm(updated);
+      } else {
+        await addAlarm(updated);
       }
+
+      router.back();
+    };
+
+    const nearby = findNearbyEnabledAlarm(alarms, updated);
+    if (nearby) {
+      Alert.alert(
+        'Nearby alarm warning',
+        'Spotify playback will keep looping after an alarm goes off, so setting another active alarm within 30 minutes usually is not necessary.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Continue anyway',
+            style: 'destructive',
+            onPress: () => void save(),
+          },
+        ],
+      );
       return;
     }
 
-    router.back();
-  }, [existingAlarm, time, track, isEditing, addAlarm, updateAlarm, router]);
+    await save();
+  }, [addAlarm, alarms, existingAlarm, isEditing, media, router, time, updateAlarm]);
 
   const handleDelete = useCallback(() => {
     if (!existingAlarm) return;
@@ -108,9 +117,8 @@ export default function AddAlarmScreen() {
     ]);
   }, [existingAlarm, deleteAlarm, router]);
 
-  const openSongSearch = () => router.push('/song-search');
+  const openPickMedia = () => router.push('/pick-media' as Href);
 
-  // ─── format time for display in header
   const [hh, mm] = time.split(':').map(Number);
   const hDisplay = is24Hour ? String(hh).padStart(2, '0') : String(hh % 12 || 12);
 
@@ -123,7 +131,6 @@ export default function AddAlarmScreen() {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={{ flex: 1 }}
         >
-          {/* ── Nav ──────────────────────────────── */}
           <View style={styles.nav}>
             <TouchableOpacity onPress={() => router.back()} style={styles.navBtn}>
               <Ionicons name="chevron-back" size={22} color={COLORS.textPrimary} />
@@ -139,67 +146,58 @@ export default function AddAlarmScreen() {
           </View>
 
           <View style={[styles.content, { alignItems: 'center' }]}>
-            {/* ── Time Preview ─────────────────────── */}
             <View style={styles.timePreview}>
               <Text style={styles.timePreviewText}>{hDisplay}:{String(mm).padStart(2, '0')}</Text>
             </View>
 
-            {/* ── Time Wheel ───────────────────────── */}
             <TimeWheelPicker value={time} onChange={setTime} is24Hour={is24Hour} compact />
 
-            {/* ── Section: Song ────────────────────── */}
             <View style={[styles.section, { width: '100%' }]}>
-              <Text style={styles.sectionLabel}>SONG</Text>
-              <TouchableOpacity style={styles.card} onPress={openSongSearch} activeOpacity={0.8}>
-                {track ? (
+              <Text style={styles.sectionLabel}>MUSIC</Text>
+              <TouchableOpacity style={styles.card} onPress={openPickMedia} activeOpacity={0.8}>
+                {media ? (
                   <View style={styles.trackRow}>
-                    {track.albumArt ? (
-                      <Image source={{ uri: track.albumArt }} style={styles.trackArt} />
+                    {getMediaImageUrl(media) ? (
+                      <Image source={{ uri: getMediaImageUrl(media) }} style={styles.trackArt} />
                     ) : (
                       <View style={[styles.trackArt, styles.trackArtPlaceholder]}>
                         <Ionicons name="musical-note" size={18} color={COLORS.primary} />
                       </View>
                     )}
                     <View style={styles.trackInfo}>
-                      <Text style={styles.trackName} numberOfLines={1}>{track.name}</Text>
-                      <Text style={styles.trackArtist} numberOfLines={1}>{track.artist}</Text>
+                      <Text style={styles.trackKind}>{getMediaKindLabel(media)}</Text>
+                      <Text style={styles.trackName} numberOfLines={1}>{getMediaTitle(media)}</Text>
+                      <Text style={styles.trackArtist} numberOfLines={1}>{getMediaSubtitle(media)}</Text>
                     </View>
                     <Ionicons name="chevron-forward" size={18} color={COLORS.textMuted} />
                   </View>
                 ) : (
                   <View style={styles.noTrack}>
                     <View style={styles.noTrackIcon}>
-                      <FontAwesome5 name="spotify" size={24} color={COLORS.primary} />
+                      <FontAwesome5 name="spotify" size={24} color={COLORS.spotify} />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.noTrackTitle}>Choose a song</Text>
-                      <Text style={styles.noTrackSub}>Search Spotify for your wake-up song</Text>
+                      <Text style={styles.noTrackTitle}>Choose music</Text>
+                      <Text style={styles.noTrackSub}>Paste a Spotify link. If left blank, The Fox plays by default.</Text>
                     </View>
                     <Ionicons name="chevron-forward" size={18} color={COLORS.textMuted} />
                   </View>
                 )}
               </TouchableOpacity>
-              {track && (
-                <TouchableOpacity onPress={() => setTrack(null)} style={styles.clearTrack}>
+              {media && (
+                <TouchableOpacity onPress={() => setMedia(null)} style={styles.clearTrack}>
                   <Ionicons name="close-circle" size={14} color={COLORS.textMuted} />
-                  <Text style={styles.clearTrackText}>Remove song</Text>
+                  <Text style={styles.clearTrackText}>Remove music</Text>
                 </TouchableOpacity>
               )}
             </View>
           </View>
 
-          {/* ── Save Button ──────────────────────── */}
           <View style={styles.footer}>
-            <TouchableOpacity
-              style={[styles.saveBtn, SHADOWS.glow]}
-              onPress={handleSave}
-              activeOpacity={0.85}
-            >
-              <LinearGradient colors={[COLORS.primary, '#17A349']} style={styles.saveBtnGrad}>
+            <TouchableOpacity style={[styles.saveBtn, SHADOWS.glow]} onPress={handleSave} activeOpacity={0.85}>
+              <LinearGradient colors={[COLORS.primary, COLORS.primaryDark]} style={styles.saveBtnGrad}>
                 <Ionicons name="checkmark" size={22} color="#fff" />
-                <Text style={styles.saveBtnText}>
-                  {isEditing ? 'Update Alarm' : 'Set Alarm'}
-                </Text>
+                <Text style={styles.saveBtnText}>{isEditing ? 'Update Alarm' : 'Set Alarm'}</Text>
               </LinearGradient>
             </TouchableOpacity>
           </View>
@@ -212,7 +210,6 @@ export default function AddAlarmScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   safe: { flex: 1 },
-
   nav: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -220,17 +217,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  navBtn: {
-    width: 40, height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  navTitle: {
-    fontFamily: FONTS.bold,
-    fontSize: 17,
-    color: COLORS.textPrimary,
-  },
-
+  navBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
+  navTitle: { fontFamily: FONTS.bold, fontSize: 17, color: COLORS.textPrimary },
   timePreview: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -245,7 +233,6 @@ const styles = StyleSheet.create({
     letterSpacing: -2,
     lineHeight: 62,
   },
-
   content: {
     flex: 1,
     paddingHorizontal: 16,
@@ -253,7 +240,6 @@ const styles = StyleSheet.create({
     gap: 16,
     justifyContent: 'flex-start',
   },
-
   section: { gap: 8 },
   sectionLabel: {
     fontFamily: FONTS.bold,
@@ -270,79 +256,38 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     gap: 12,
   },
-
-  trackRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  trackArt: {
-    width: 48, height: 48,
-    borderRadius: RADIUS.sm,
-  },
+  trackRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  trackArt: { width: 48, height: 48, borderRadius: RADIUS.sm },
   trackArtPlaceholder: {
     backgroundColor: COLORS.surface3,
     justifyContent: 'center',
     alignItems: 'center',
   },
   trackInfo: { flex: 1 },
-  trackName: {
-    fontFamily: FONTS.medium,
-    fontSize: 15,
-    color: COLORS.textPrimary,
+  trackKind: {
+    fontFamily: FONTS.bold,
+    fontSize: 10,
+    color: COLORS.primary,
+    letterSpacing: 0.8,
+    marginBottom: 2,
   },
-  trackArtist: {
-    fontFamily: FONTS.regular,
-    fontSize: 13,
-    color: COLORS.textMuted,
-    marginTop: 2,
-  },
-
-  noTrack: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
+  trackName: { fontFamily: FONTS.medium, fontSize: 15, color: COLORS.textPrimary },
+  trackArtist: { fontFamily: FONTS.regular, fontSize: 13, color: COLORS.textMuted, marginTop: 2 },
+  noTrack: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   noTrackIcon: {
-    width: 44, height: 44,
+    width: 44,
+    height: 44,
     borderRadius: RADIUS.sm,
     backgroundColor: COLORS.surface3,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  noTrackTitle: {
-    fontFamily: FONTS.medium,
-    fontSize: 15,
-    color: COLORS.textPrimary,
-  },
-  noTrackSub: {
-    fontFamily: FONTS.regular,
-    fontSize: 12,
-    color: COLORS.textMuted,
-    marginTop: 2,
-  },
-  clearTrack: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 4,
-  },
-  clearTrackText: {
-    fontFamily: FONTS.regular,
-    fontSize: 12,
-    color: COLORS.textMuted,
-  },
-
-  footer: {
-    paddingHorizontal: 16,
-    paddingBottom: 24,
-    paddingTop: 8,
-  },
-  saveBtn: {
-    borderRadius: RADIUS.lg,
-    overflow: 'hidden',
-    height: 56,
-  },
+  noTrackTitle: { fontFamily: FONTS.medium, fontSize: 15, color: COLORS.textPrimary },
+  noTrackSub: { fontFamily: FONTS.regular, fontSize: 12, color: COLORS.textMuted, marginTop: 2 },
+  clearTrack: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 4 },
+  clearTrackText: { fontFamily: FONTS.regular, fontSize: 12, color: COLORS.textMuted },
+  footer: { paddingHorizontal: 16, paddingBottom: 24, paddingTop: 8 },
+  saveBtn: { borderRadius: RADIUS.lg, overflow: 'hidden', height: 56 },
   saveBtnGrad: {
     flex: 1,
     flexDirection: 'row',
@@ -350,9 +295,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  saveBtnText: {
-    fontFamily: FONTS.bold,
-    fontSize: 17,
-    color: '#fff',
-  },
+  saveBtnText: { fontFamily: FONTS.bold, fontSize: 17, color: '#fff' },
 });

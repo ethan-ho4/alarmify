@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────
-//  Alarmify – Background Audio Keepalive
+//  Ethan's Alarm – Background Audio Keepalive
 //  Loops a WAV so iOS keeps the app alive for JS timers.
 //  Asset: silence.wav (near-silent; keeps the audio session active).
 //  Volume: EXPO_PUBLIC_ALARMIFY_KEEPALIVE_VOLUME (0–1), default 0 (silent).

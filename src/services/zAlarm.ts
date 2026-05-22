@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────
-//  Alarmify – Z-Alarm (local sound fallback)
+//  Ethan's Alarm – Z-Alarm (local sound fallback)
 //  When Spotify Web API fails, play a system sound
 //  so the user is not met with silence.
 // ─────────────────────────────────────────────

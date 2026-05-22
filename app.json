@@ -1,11 +1,10 @@
 {
   "expo": {
-    "name": "Alarmify",
+    "name": "Ethan's Alarm",
     "slug": "alarmify",
     "version": "1.0.1",
     "icon": "./alarmify_icon.png",
     "splash": {
-      "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#000000"
     },
@@ -45,7 +44,7 @@
         "expo-notifications",
         {
           "icon": "./assets/notification-icon.png",
-          "color": "#1DB954",
+          "color": "#6495ED",
           "sounds": []
         }
       ],

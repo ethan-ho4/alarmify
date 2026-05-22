@@ -38,9 +38,9 @@ export default function ShortcutsSetupScreen() {
 
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
           <Text style={styles.intro}>
-            On iPhone, Alarmify keeps silent audio running until your alarm, then stops so your
+            On iPhone, Ethan&apos;s Alarm keeps silent audio running until your alarm, then stops so your
             Focus can turn off. A Shortcuts automation (you create outside this app) opens Spotify
-            using the track, album, or playlist link Alarmify exposes.
+            using the track, album, or playlist link Ethan&apos;s Alarm exposes.
           </Text>
 
           {SHORTCUTS_SETUP_STEPS.map((step) => (

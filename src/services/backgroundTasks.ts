@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────
-//  Alarmify – Background Notification Task (Path B)
+//  Ethan's Alarm – Background Notification Task (Path B)
 //  Best-effort JS when a notification is delivered.
 //  Must be imported early (see app/_layout.tsx).
 // ─────────────────────────────────────────────
@@ -9,6 +9,7 @@ import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { alarmifyDebug } from '../utils/alarmifyDebug';
 import { refreshSpotifyToken, playTrack } from './spotify';
+import { beginAlarmPlayback, endAlarmPlayback } from './alarmPlaybackLock';
 
 export const ALARM_BACKGROUND_NOTIFICATION_TASK = 'ALARMIFY-BACKGROUND-NOTIFICATION-TASK';
 
@@ -82,8 +83,14 @@ TaskManager.defineTask<Notifications.NotificationTaskPayload>(
 
     if (!trackUri) return;
 
-    await refreshSpotifyToken();
-    await playTrack(trackUri, { context: 'background', alarmId: alarmId ?? undefined });
+    if (!beginAlarmPlayback(alarmId, 'background-task')) return;
+
+    try {
+      await refreshSpotifyToken();
+      await playTrack(trackUri, { context: 'background', alarmId: alarmId ?? undefined });
+    } finally {
+      endAlarmPlayback(alarmId);
+    }
   },
 );
 

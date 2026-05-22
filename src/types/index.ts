@@ -1,7 +1,8 @@
 // ─────────────────────────────────────────────
-//  Alarmify – Shared TypeScript Types
+//  Ethan's Alarm – Shared TypeScript Types
 // ─────────────────────────────────────────────
 
+/** @deprecated Use SpotifyMedia with kind 'track' */
 export interface SpotifyTrack {
   id: string;
   uri: string;
@@ -12,6 +13,37 @@ export interface SpotifyTrack {
   duration_ms: number;
 }
 
+export type SpotifyMedia =
+  | {
+      kind: 'track';
+      id: string;
+      uri: string;
+      name: string;
+      artist: string;
+      imageUrl: string;
+      albumName?: string;
+      duration_ms?: number;
+    }
+  | {
+      kind: 'playlist';
+      id: string;
+      uri: string;
+      name: string;
+      ownerName: string;
+      imageUrl: string;
+      trackCount?: number;
+    }
+  | {
+      kind: 'album';
+      id: string;
+      uri: string;
+      name: string;
+      artist: string;
+      imageUrl: string;
+    };
+
+export type BedtimePhase = 'idle' | 'warning' | 'black';
+
 export interface Alarm {
   id: string;
   label: string;
@@ -19,9 +51,8 @@ export interface Alarm {
   time: string;
   /** 0 = Sunday … 6 = Saturday; empty array = one-time alarm */
   days: number[];
-  track: SpotifyTrack | null;
+  media: SpotifyMedia | null;
   isEnabled: boolean;
-  /** IDs returned by expo-notifications so we can cancel later */
   notificationIds: string[];
   createdAt: number;
 }
@@ -29,13 +60,13 @@ export interface Alarm {
 export interface SpotifyAuth {
   accessToken: string;
   refreshToken: string;
-  /** Unix ms timestamp when the token expires */
   expiresAt: number;
 }
 
 export type RootStackParamList = {
   index: undefined;
   'add-alarm': { alarmId?: string } | undefined;
+  'pick-media': undefined;
   'song-search': undefined;
   'shortcuts-setup': undefined;
 };

@@ -12,7 +12,7 @@ export function ShortcutsAlarmBar() {
   const router = useRouter();
   const [helpOpen, setHelpOpen] = useState(false);
   const alarms = useStore((s) => s.alarms);
-  const hasEnabled = alarms.some((a) => a.isEnabled && a.track?.uri);
+  const hasEnabled = alarms.some((a) => a.isEnabled && a.media?.uri);
 
   if (!usesShortcutsAlarmOnIos() || Platform.OS !== 'ios') return null;
   if (!hasEnabled) return null;

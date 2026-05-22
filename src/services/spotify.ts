@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────
-//  Alarmify – Spotify Service
+//  Ethan's Alarm – Spotify Service
 //  Handles OAuth (PKCE), token storage/refresh,
 //  search, and playback control.
 // ─────────────────────────────────────────────
@@ -7,8 +7,9 @@
 import Constants, { ExecutionEnvironment } from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 import { Linking, Platform } from 'react-native';
-import { SpotifyAuth, SpotifyTrack } from '../types';
+import { SpotifyAuth, SpotifyMedia, SpotifyTrack } from '../types';
 import { alarmifyDebug } from '../utils/alarmifyDebug';
+import { getSpotifyUriKind, spotifyUriToOpenUrl, sanitizeSpotifyUrl } from '../utils/spotifyUri';
 import { disableAlarmAfterFired } from './alarmPlaybackLifecycle';
 
 // Detect if we are running in Expo Go
@@ -21,12 +22,17 @@ const SCOPES = [
   'user-modify-playback-state',
   'user-read-currently-playing',
   'streaming',
+  'playlist-read-private',
+  'playlist-read-collaborative',
+  'user-library-read',
 ].join(' ');
 
 // SecureStore keys
 const KEY_ACCESS = 'sp_access_token';
 const KEY_REFRESH = 'sp_refresh_token';
 const KEY_EXPIRY = 'sp_expires_at';
+
+export type SpotifyUserProfile = { name: string; image: string | null };
 
 // ── Token Storage ────────────────────────────────────────────────────────────
 
@@ -62,6 +68,13 @@ export async function clearAuth(): Promise<void> {
 
 // ── Token Refresh ────────────────────────────────────────────────────────────
 
+function isInvalidRefreshGrant(error: unknown): boolean {
+  if (typeof error !== 'string') return false;
+  return error === 'invalid_grant' || error === 'invalid_token';
+}
+
+let inFlightRefresh: Promise<SpotifyAuth | null> | null = null;
+
 async function refreshToken(storedRefresh: string): Promise<SpotifyAuth | null> {
   try {
     const body = new URLSearchParams({
@@ -76,8 +89,13 @@ async function refreshToken(storedRefresh: string): Promise<SpotifyAuth | null> 
       body: body.toString(),
     });
 
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      if (res.status === 400 && isInvalidRefreshGrant(data?.error)) {
+        await clearAuth();
+      }
+      return null;
+    }
 
     const auth: SpotifyAuth = {
       accessToken: data.access_token,
@@ -91,19 +109,34 @@ async function refreshToken(storedRefresh: string): Promise<SpotifyAuth | null> 
   }
 }
 
-/** Returns a valid access token, refreshing if necessary. */
-export async function refreshSpotifyToken(): Promise<string | null> {
-  return getValidToken();
+async function refreshTokenOnce(storedRefresh: string): Promise<SpotifyAuth | null> {
+  if (!inFlightRefresh) {
+    inFlightRefresh = refreshToken(storedRefresh).finally(() => {
+      inFlightRefresh = null;
+    });
+  }
+
+  return inFlightRefresh;
 }
 
-export async function getValidToken(): Promise<string | null> {
+/** Returns a valid access token, refreshing if necessary. */
+export async function refreshSpotifyToken(forceRefresh = false): Promise<string | null> {
+  return getValidToken({ forceRefresh });
+}
+
+export async function getValidToken(options: { forceRefresh?: boolean } = {}): Promise<string | null> {
   const stored = await loadAuth();
   if (!stored) return null;
 
   // Refresh 60 s before expiry
-  if (Date.now() >= stored.expiresAt - 60_000) {
-    const refreshed = await refreshToken(stored.refreshToken);
-    return refreshed?.accessToken ?? null;
+  if (options.forceRefresh || Date.now() >= stored.expiresAt - 60_000) {
+    const refreshed = await refreshTokenOnce(stored.refreshToken);
+    if (refreshed?.accessToken) return refreshed.accessToken;
+
+    // If proactive refresh fails transiently but the current token still works,
+    // keep using it and retry later instead of forcing a logout.
+    if (Date.now() < stored.expiresAt - 60_000) return stored.accessToken;
+    return null;
   }
 
   return stored.accessToken;
@@ -148,26 +181,66 @@ export async function exchangeCodeForTokens(
 
 // ── API Helpers ──────────────────────────────────────────────────────────────
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function retryAfterMs(res: Response): number {
+  const raw = res.headers.get('Retry-After');
+  const seconds = raw ? Number(raw) : NaN;
+  if (!Number.isFinite(seconds) || seconds <= 0) return 1_500;
+  return Math.min(seconds * 1_000, 10_000);
+}
+
 async function spotifyFetch(path: string, options: RequestInit = {}): Promise<Response> {
-  const token = await getValidToken();
+  let token = await getValidToken();
   if (!token) throw new Error('Not authenticated');
 
   const isGet = !options.method || options.method.toUpperCase() === 'GET';
 
-  return fetch(`https://api.spotify.com/v1${path}`, {
+  const request = (accessToken: string) => fetch(`https://api.spotify.com/v1${path}`, {
     ...options,
     headers: {
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${accessToken}`,
       // Only set Content-Type for requests with a body (POST, PUT, etc.)
       ...(!isGet && { 'Content-Type': 'application/json' }),
       ...options.headers,
     },
   });
+
+  let res = await request(token);
+
+  if (res.status === 401) {
+    token = await getValidToken({ forceRefresh: true });
+    if (!token) return res;
+    res = await request(token);
+  }
+
+  if (res.status === 429) {
+    await delay(retryAfterMs(res));
+    res = await request(token);
+  }
+
+  return res;
 }
 
 // ── Search ───────────────────────────────────────────────────────────────────
 
-export async function searchTracks(query: string): Promise<SpotifyTrack[]> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function mapApiTrack(item: any): SpotifyMedia {
+  return {
+    kind: 'track',
+    id: item.id,
+    uri: item.uri,
+    name: item.name,
+    artist: item.artists.map((a: { name: string }) => a.name).join(', '),
+    albumName: item.album?.name,
+    imageUrl: item.album?.images?.[0]?.url ?? '',
+    duration_ms: item.duration_ms,
+  };
+}
+
+export async function searchTracks(query: string): Promise<SpotifyMedia[]> {
   const q = encodeURIComponent(query.trim());
   const res = await spotifyFetch(`/search?q=${q}&type=track&limit=10`);
   if (!res.ok) {
@@ -176,16 +249,85 @@ export async function searchTracks(query: string): Promise<SpotifyTrack[]> {
   }
 
   const data = await res.json();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return data.tracks.items.map((item: any): SpotifyTrack => ({
-    id: item.id,
-    uri: item.uri,
-    name: item.name,
-    artist: item.artists.map((a: any) => a.name).join(', '),
-    albumName: item.album.name,
-    albumArt: item.album.images[0]?.url ?? '',
-    duration_ms: item.duration_ms,
-  }));
+  return data.tracks.items.map(mapApiTrack);
+}
+
+export type LibraryPage<T> = { items: T[]; nextOffset: number | null };
+
+export async function fetchUserPlaylists(
+  limit = 20,
+  offset = 0,
+): Promise<LibraryPage<SpotifyMedia>> {
+  const res = await spotifyFetch(`/me/playlists?limit=${limit}&offset=${offset}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error?.message ?? `Spotify ${res.status}`);
+  }
+  const data = await res.json();
+  const items = (data.items ?? []).map(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (p: any): SpotifyMedia => ({
+      kind: 'playlist',
+      id: p.id,
+      uri: p.uri,
+      name: p.name,
+      ownerName: p.owner?.display_name ?? 'Spotify',
+      imageUrl: p.images?.[0]?.url ?? '',
+      trackCount: p.tracks?.total,
+    }),
+  );
+  const next = data.next ? offset + items.length : null;
+  return { items, nextOffset: next };
+}
+
+export async function fetchLikedTracks(
+  limit = 20,
+  offset = 0,
+): Promise<LibraryPage<SpotifyMedia>> {
+  const res = await spotifyFetch(`/me/tracks?limit=${limit}&offset=${offset}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error?.message ?? `Spotify ${res.status}`);
+  }
+  const data = await res.json();
+  const items = (data.items ?? []).map(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (row: any) => mapApiTrack(row.track),
+  );
+  const next = data.next ? offset + items.length : null;
+  return { items, nextOffset: next };
+}
+
+export async function fetchSavedAlbums(
+  limit = 20,
+  offset = 0,
+): Promise<LibraryPage<SpotifyMedia>> {
+  const res = await spotifyFetch(`/me/albums?limit=${limit}&offset=${offset}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body?.error?.message ?? `Spotify ${res.status}`);
+  }
+  const data = await res.json();
+  const items = (data.items ?? []).map(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (row: any): SpotifyMedia => {
+      const a = row.album;
+      return {
+        kind: 'album',
+        id: a.id,
+        uri: a.uri,
+        name: a.name,
+        artist: a.artists.map((x: { name: string }) => x.name).join(', '),
+        imageUrl: a.images?.[0]?.url ?? '',
+      };
+    },
+  );
+  const next = data.next ? offset + items.length : null;
+  return { items, nextOffset: next };
+}
+
+async function setShuffleViaWebApi(state: boolean): Promise<void> {
+  await spotifyFetch(`/me/player/shuffle?state=${state}`, { method: 'PUT' }).catch(() => null);
 }
 
 /** Opens the Spotify app so this phone usually appears in Spotify Connect for Web API control. */
@@ -324,6 +466,7 @@ async function setPlaybackVolume(deviceId: string | null, percent: number): Prom
 
 export type WebPlaybackOptions = {
   positionMs?: number;
+  mediaKind?: SpotifyMedia['kind'];
   /** Applied after a successful play (e.g. 0 for silent alarm pre-roll). */
   volumePercent?: number;
 };
@@ -350,6 +493,7 @@ function clearPrimedDeviceCache(): void {
 async function fetchPlayerState(): Promise<{
   deviceId: string | null;
   itemUri: string | null;
+  contextUri: string | null;
   progressMs: number;
 } | null> {
   const res = await spotifyFetch('/me/player');
@@ -359,8 +503,29 @@ async function fetchPlayerState(): Promise<{
   return {
     deviceId: data.device?.id ?? null,
     itemUri: data.item?.uri ?? null,
+    contextUri: data.context?.uri ?? null,
     progressMs: typeof data.progress_ms === 'number' ? data.progress_ms : 0,
   };
+}
+
+function isContextPlayback(uri: string, mediaKind?: SpotifyMedia['kind']): boolean {
+  const kind = mediaKind ?? getSpotifyUriKind(uri);
+  return kind === 'playlist' || kind === 'album';
+}
+
+function buildPlayerPlayBody(uri: string, options?: WebPlaybackOptions): Record<string, unknown> {
+  if (isContextPlayback(uri, options?.mediaKind)) {
+    return {
+      context_uri: uri,
+      offset: { position: 0 },
+    };
+  }
+
+  const body: Record<string, unknown> = { uris: [uri] };
+  if (options?.positionMs != null) {
+    body.position_ms = options.positionMs;
+  }
+  return body;
 }
 
 async function playbackNearStart(expectedUri: string, maxProgressMs: number): Promise<boolean> {
@@ -373,6 +538,11 @@ async function playbackNearStart(expectedUri: string, maxProgressMs: number): Pr
 async function playbackHasUri(expectedUri: string): Promise<boolean> {
   const st = await fetchPlayerState();
   return st?.itemUri === expectedUri;
+}
+
+async function playbackHasContext(expectedUri: string): Promise<boolean> {
+  const st = await fetchPlayerState();
+  return st?.contextUri === expectedUri;
 }
 
 async function isDeviceIdInConnectList(deviceId: string): Promise<boolean> {
@@ -404,6 +574,7 @@ export async function playTrackViaWebApiWithReason(
 ): Promise<WebApiPlayReason> {
   alarmifyDebug('Spotify:WebPlay', 'playTrackViaWebApi start', {
     uri,
+    mediaKind: options?.mediaKind,
     positionMs: options?.positionMs,
     volumePercent: options?.volumePercent,
   });
@@ -414,7 +585,7 @@ export async function playTrackViaWebApiWithReason(
       alarmifyDebug('Spotify:WebPlay', 'aborted: no valid token', {});
       return {
         ok: false,
-        message: 'Not signed in to Spotify in Alarmify, or the session expired. Open Alarmify and sign in again.',
+        message: "Not signed in to Spotify in Ethan's Alarm, or the session expired. Open Ethan's Alarm and sign in again.",
       };
     }
 
@@ -426,10 +597,10 @@ export async function playTrackViaWebApiWithReason(
     }
     const deviceId = resolved.deviceId;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const body: Record<string, any> = { uris: [uri] };
-    if (options?.positionMs != null) {
-      body.position_ms = options.positionMs;
+    const isContext = isContextPlayback(uri, options?.mediaKind);
+    const body = buildPlayerPlayBody(uri, options);
+    if (isContext) {
+      await setShuffleViaWebApi(false);
     }
 
     let res = await putMePlayerPlay(deviceId, body);
@@ -547,14 +718,17 @@ async function rampPlaybackVolume(deviceId: string, targetPercent: number): Prom
  * Starts the alarm track at volume 0 and enables track repeat so playback
  * survives the pre-arm window. No-op in Expo Go. Requires Premium + active device.
  */
-export async function primeAlarmForSilentPlayback(uri: string): Promise<boolean> {
+export async function primeAlarmForSilentPlayback(
+  uri: string,
+  mediaKind?: SpotifyMedia['kind'],
+): Promise<boolean> {
   if (isExpoGo) {
     alarmifyDebug('Spotify:Prime', 'skipped (Expo Go)', {});
     return false;
   }
 
-  alarmifyDebug('Spotify:Prime', 'primeAlarmForSilentPlayback start', { uri });
-  const web = await playTrackViaWebApiWithReason(uri, { positionMs: 0, volumePercent: 0 });
+  alarmifyDebug('Spotify:Prime', 'primeAlarmForSilentPlayback start', { uri, mediaKind });
+  const web = await playTrackViaWebApiWithReason(uri, { mediaKind, positionMs: 0, volumePercent: 0 });
   if (!web.ok) {
     clearPrimedDeviceCache();
     alarmifyDebug('Spotify:Prime', 'prime failed at play+vol0', { uri, message: web.message });
@@ -565,18 +739,25 @@ export async function primeAlarmForSilentPlayback(uri: string): Promise<boolean>
   lastPrimedUri = uri;
   lastPrimedAt = Date.now();
 
-  const rep = await spotifyFetch(
-    `/me/player/repeat?state=track&device_id=${encodeURIComponent(web.deviceId)}`,
-    { method: 'PUT' },
-  );
-  if (!(rep.status === 204 || rep.status === 200)) {
-    console.warn('[Spotify] Silent prime: repeat=track failed', rep.status);
-    alarmifyDebug('Spotify:Prime', 'repeat=track failed', {
-      status: rep.status,
-      body: await spotifyErrorSnippet(rep),
-    });
+  if (!isContextPlayback(uri, mediaKind)) {
+    const rep = await spotifyFetch(
+      `/me/player/repeat?state=track&device_id=${encodeURIComponent(web.deviceId)}`,
+      { method: 'PUT' },
+    );
+    if (!(rep.status === 204 || rep.status === 200)) {
+      console.warn('[Spotify] Silent prime: repeat=track failed', rep.status);
+      alarmifyDebug('Spotify:Prime', 'repeat=track failed', {
+        status: rep.status,
+        body: await spotifyErrorSnippet(rep),
+      });
+    }
+  } else {
+    await spotifyFetch(
+      `/me/player/repeat?state=off&device_id=${encodeURIComponent(web.deviceId)}`,
+      { method: 'PUT' },
+    ).catch(() => null);
   }
-  console.log('[Spotify] Silent alarm prime complete (vol 0, repeat track)');
+  console.log('[Spotify] Silent alarm prime complete (vol 0)');
   alarmifyDebug('Spotify:Prime', 'complete', { deviceId: `${web.deviceId.slice(0, 8)}…` });
   return true;
 }
@@ -590,30 +771,37 @@ export async function primeAlarmForSilentPlayback(uri: string): Promise<boolean>
 export async function revealAlarmPlayback(
   uri: string,
   volumePercent: number = ALARM_REVEAL_VOLUME_PERCENT,
+  mediaKind?: SpotifyMedia['kind'],
 ): Promise<boolean> {
   if (isExpoGo) {
     alarmifyDebug('Spotify:Reveal', 'skipped (Expo Go)', {});
     return false;
   }
 
-  alarmifyDebug('Spotify:Reveal', 'start', { uri, volumePercent });
+  const isContext = isContextPlayback(uri, mediaKind);
+  alarmifyDebug('Spotify:Reveal', 'start', { uri, volumePercent, mediaKind });
 
   const tryAudiblePlayFromStart = async (): Promise<boolean> => {
-    let r = await playTrackViaWebApiWithReason(uri, { positionMs: 0, volumePercent });
+    let r = await playTrackViaWebApiWithReason(uri, { mediaKind, positionMs: 0, volumePercent });
     if (!r.ok) {
       alarmifyDebug('Spotify:Reveal', 'audible Web API failed', { message: r.message });
       return false;
     }
+    if (isContext) return true;
     await new Promise((res) => setTimeout(res, 450));
     let near = await playbackNearStart(uri, PLAYBACK_NEAR_START_MS);
     if (near) return true;
     alarmifyDebug('Spotify:Reveal', 'audible play verification failed — retry once', {});
-    r = await playTrackViaWebApiWithReason(uri, { positionMs: 0, volumePercent });
+    r = await playTrackViaWebApiWithReason(uri, { mediaKind, positionMs: 0, volumePercent });
     if (!r.ok) return false;
     await new Promise((res) => setTimeout(res, 450));
     near = await playbackNearStart(uri, PLAYBACK_NEAR_START_MS);
     return near;
   };
+
+  if (isContext) {
+    return tryAudiblePlayFromStart();
+  }
 
   let deviceId: string | null = null;
   const cacheFresh =
@@ -660,7 +848,7 @@ export async function revealAlarmPlayback(
   }
 
   await new Promise((r) => setTimeout(r, 400));
-  let atStart = await playbackNearStart(uri, PLAYBACK_NEAR_START_MS);
+  const atStart = isContext ? true : await playbackNearStart(uri, PLAYBACK_NEAR_START_MS);
   if (!atStart) {
     alarmifyDebug('Spotify:Reveal', 'seek ok but state not at start — audible play', {});
     const ok = await tryAudiblePlayFromStart();
@@ -682,12 +870,17 @@ export async function revealAlarmPlayback(
     { method: 'PUT' },
   ).catch(() => null);
 
-  const correctTrack = await playbackHasUri(uri);
-  if (!correctTrack) {
+  const correctMedia = isContext ? await playbackHasContext(uri) : await playbackHasUri(uri);
+  if (!correctMedia && !isContext) {
     alarmifyDebug('Spotify:Reveal', 'wrong track after reveal — audible play', {});
     const ok = await tryAudiblePlayFromStart();
     alarmifyDebug('Spotify:Reveal', 'audible Web API result', { ok });
     return ok;
+  }
+  if (!correctMedia) {
+    alarmifyDebug('Spotify:Reveal', 'context verification unavailable after reveal; keeping successful playback', {
+      uri,
+    });
   }
 
   console.log('[Spotify] Alarm reveal complete (audible volume)');
@@ -703,14 +896,14 @@ export async function revealAlarmPlayback(
  *   2. Spotify App Remote SDK (requires foreground connection)
  *   3. Deep link (opens Spotify app directly, last resort)
  */
-export type PlayTrackContext = 'background' | 'auto' | 'foreground' | 'tap';
+export type PlayTrackContext = 'background' | 'auto' | 'foreground' | 'tap' | 'alarm_sdk';
 
 export type PlayTrackChannel = 'web_api' | 'remote_sdk' | 'deeplink' | 'expo_deeplink' | 'z_alarm' | 'failed';
 
 export type PlayTrackOptions = {
   context?: PlayTrackContext;
-  /** When set and playback succeeds, one-time alarms auto-disable. */
   alarmId?: string;
+  mediaKind?: SpotifyMedia['kind'];
 };
 
 export interface PlayTrackResult {
@@ -749,49 +942,102 @@ export function getLastPlayTrackResult(): PlayTrackResult | null {
   return lastPlaybackResult;
 }
 
-/** Open Spotify to a track: HTTPS first (Universal Link when possible), then spotify: scheme. */
-async function openSpotifyTrackFallback(trackId: string): Promise<boolean> {
-  const httpsUrl = `https://open.spotify.com/track/${trackId}`;
-  const spotifyUrl = `spotify:track:${trackId}`;
+/** Open track / playlist / album via HTTPS or spotify: URI. */
+async function openSpotifyMediaFallback(uri: string): Promise<boolean> {
+  const httpsUrl = spotifyUriToOpenUrl(uri);
+  const spotifyUri = sanitizeSpotifyUrl(uri);
   try {
     await Linking.openURL(httpsUrl);
     return true;
   } catch {
     /* continue */
   }
-  try {
-    await Linking.openURL(spotifyUrl);
-    return true;
-  } catch {
+  if (spotifyUri && spotifyUri !== httpsUrl) {
     try {
-      await Linking.openURL(httpsUrl);
+      await Linking.openURL(spotifyUri);
       return true;
     } catch {
-      return false;
+      /* continue */
     }
+  }
+  try {
+    await Linking.openURL(httpsUrl);
+    return true;
+  } catch {
+    return false;
   }
 }
 
-async function tryRemoteSdk(uri: string, failureSteps: string[]): Promise<PlayTrackResult | null> {
+/** Open Spotify to a track: HTTPS first (Universal Link when possible), then spotify: scheme. */
+async function openSpotifyTrackFallback(trackId: string): Promise<boolean> {
+  return openSpotifyMediaFallback(`spotify:track:${trackId}`);
+}
+
+async function tryRemoteSdkWithRetries(
+  uri: string,
+  failureSteps: string[],
+  shuffle?: boolean,
+  attempts = 2,
+): Promise<PlayTrackResult | null> {
+  for (let i = 0; i < attempts; i++) {
+    if (i > 0) await delay(400);
+    const result = await tryRemoteSdk(uri, failureSteps, shuffle);
+    if (result) return result;
+  }
+  return null;
+}
+
+function getSpotifyRemote(): {
+  connect: (token: string) => Promise<void>;
+  playUri: (uri: string) => Promise<void>;
+  setShuffling?: (enabled: boolean) => Promise<void>;
+} {
+  const { remote } = require('react-native-spotify-remote');
+  return remote;
+}
+
+async function enablePlaylistShuffle(shuffle: boolean | undefined): Promise<void> {
+  if (!shuffle) return;
+  const remote = getSpotifyRemote();
   try {
-    const { remote } = require('react-native-spotify-remote');
+    if (typeof remote.setShuffling === 'function') {
+      await remote.setShuffling(true);
+      return;
+    }
+  } catch {
+    /* fall through */
+  }
+  await setShuffleViaWebApi(true);
+}
+
+async function tryRemoteSdk(
+  uri: string,
+  failureSteps: string[],
+  shuffle?: boolean,
+): Promise<PlayTrackResult | null> {
+  try {
+    const remote = getSpotifyRemote();
     const token = await getValidToken();
 
-    if (token) {
-      await remote.connect(token, {
-        spotifyClientId: CLIENT_ID,
-        playURI: uri,
-      });
-      console.log('[Spotify] Remote SDK playback started ✅');
-      alarmifyDebug('Spotify:playTrack', 'exit via Remote SDK', {});
-      return {
-        ok: true,
-        channel: 'remote_sdk',
-        failureSteps,
-        usedSpotifyUrlScheme: false,
-      };
+    if (!token) {
+      failureSteps.push('App Remote: no access token available.');
+      return null;
     }
-    failureSteps.push('App Remote: no access token available.');
+
+    await remote.connect(token);
+    await delay(400);
+    await remote.playUri(uri);
+    await enablePlaylistShuffle(shuffle);
+
+    failureSteps.push('App Remote: connect + playUri OK');
+    console.log('[Spotify] Remote SDK playback started ✅');
+    alarmifyDebug('Spotify:playTrack', 'exit via Remote SDK', { shuffle });
+    return {
+      ok: true,
+      channel: 'remote_sdk',
+      failureSteps,
+      usedSpotifyUrlScheme: false,
+    };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.warn('[Spotify] Remote SDK playback failed:', e);
@@ -800,14 +1046,89 @@ async function tryRemoteSdk(uri: string, failureSteps: string[]): Promise<PlayTr
   return null;
 }
 
+const ALARM_SPOTIFY_LAUNCH_DELAY_MS = 1_500;
+
+/** iOS alarm fire: App Remote → Web API → deeplink → zAlarm. */
+async function playAlarmSdkTrack(
+  uri: string,
+  mediaKind: SpotifyMedia['kind'] | undefined,
+): Promise<PlayTrackResult> {
+  const failureSteps: string[] = [];
+  const cascadeSteps: string[] = [];
+  const shuffle = false;
+
+  const opened = await openSpotifyApp();
+  cascadeSteps.push(opened ? 'Opened Spotify app' : 'Could not open Spotify app (continuing)');
+  await delay(ALARM_SPOTIFY_LAUNCH_DELAY_MS);
+
+  const remoteResult = await tryRemoteSdkWithRetries(uri, failureSteps, shuffle);
+  if (remoteResult) {
+    cascadeSteps.push('App Remote succeeded');
+    const result: PlayTrackResult = { ...remoteResult, failureSteps: [...cascadeSteps, ...failureSteps] };
+    lastPlaybackResult = result;
+    logPlaybackDiagnosisIfNeeded(result);
+    return result;
+  }
+
+  cascadeSteps.push('App Remote failed after retries');
+  failureSteps.push('Trying Spotify Web API…');
+
+  const webResult = await playTrackWebApiOnly(uri, failureSteps, true, mediaKind);
+  if (webResult.ok) {
+    cascadeSteps.push('Web API: playback started');
+    const result: PlayTrackResult = {
+      ...webResult,
+      failureSteps: [...cascadeSteps, ...failureSteps],
+    };
+    lastPlaybackResult = result;
+    logPlaybackDiagnosisIfNeeded(result);
+    return result;
+  }
+
+  cascadeSteps.push(`Web API failed: ${failureSteps[failureSteps.length - 1] ?? 'unknown'}`);
+  failureSteps.push('Trying Spotify link…');
+
+  const linkOpened = await openSpotifyMediaFallback(uri);
+  if (linkOpened) {
+    cascadeSteps.push('Opened Spotify link (may need manual play)');
+    alarmifyDebug('Spotify:playTrack', 'alarm_sdk deeplink opened', { uri });
+    const result: PlayTrackResult = {
+      ok: true,
+      channel: 'deeplink',
+      failureSteps: [...cascadeSteps, ...failureSteps],
+      usedSpotifyUrlScheme: true,
+    };
+    lastPlaybackResult = result;
+    logPlaybackDiagnosisIfNeeded(result);
+    return result;
+  }
+
+  cascadeSteps.push('Could not open Spotify link');
+  const { playZAlarmFallback } = await import('./zAlarm');
+  const zReason =
+    failureSteps.length > 0 ? failureSteps.join(' · ').slice(0, 220) : 'Spotify unavailable at alarm';
+  await playZAlarmFallback(zReason);
+
+  const result: PlayTrackResult = {
+    ok: false,
+    channel: 'z_alarm',
+    failureSteps: [...cascadeSteps, ...failureSteps],
+    usedSpotifyUrlScheme: false,
+  };
+  lastPlaybackResult = result;
+  logPlaybackDiagnosisIfNeeded(result);
+  return result;
+}
+
 async function playTrackWebApiOnly(
   uri: string,
   failureSteps: string[],
   withRetries: boolean,
+  mediaKind?: SpotifyMedia['kind'],
 ): Promise<PlayTrackResult> {
   const web = withRetries
-    ? await playTrackViaWebApiWithRetries(uri)
-    : await playTrackViaWebApiWithReason(uri);
+    ? await playTrackViaWebApiWithRetries(uri, { mediaKind })
+    : await playTrackViaWebApiWithReason(uri, { mediaKind });
 
   if (web.ok) {
     return {
@@ -841,7 +1162,9 @@ function finalizePlayback(
 export async function playTrack(uri: string, options?: PlayTrackOptions): Promise<PlayTrackResult> {
   const context = options?.context ?? 'auto';
   const alarmId = options?.alarmId;
-  alarmifyDebug('Spotify:playTrack', 'start', { uri, isExpoGo, context, alarmId });
+  const mediaKind = options?.mediaKind;
+  const uriKind = mediaKind ?? getSpotifyUriKind(uri);
+  alarmifyDebug('Spotify:playTrack', 'start', { uri, isExpoGo, context, alarmId, mediaKind });
   const failureSteps: string[] = [];
 
   if (isExpoGo) {
@@ -849,7 +1172,9 @@ export async function playTrack(uri: string, options?: PlayTrackOptions): Promis
     alarmifyDebug('Spotify:playTrack', 'Expo Go → deep link only', {});
     failureSteps.push('Expo Go: Web API + App Remote are unavailable; only a Spotify URL can be opened.');
     const trackId = uri.replace('spotify:track:', '');
-    const opened = await openSpotifyTrackFallback(trackId);
+    const opened = uriKind === 'track'
+      ? await openSpotifyTrackFallback(trackId)
+      : await openSpotifyMediaFallback(uri);
     if (opened) {
       alarmifyDebug('Spotify:playTrack', 'Expo Go deep link opened', { trackId });
       return finalizePlayback(
@@ -874,11 +1199,30 @@ export async function playTrack(uri: string, options?: PlayTrackOptions): Promis
     );
   }
 
+  if (context === 'alarm_sdk') {
+    return playAlarmSdkTrack(uri, mediaKind);
+  }
+
   // ── Background / auto: Web API only (no deep-link popup) ─────────────────
   if (context === 'background' || context === 'auto') {
-    const result = await playTrackWebApiOnly(uri, failureSteps, true);
+    const result = await playTrackWebApiOnly(uri, failureSteps, true, mediaKind);
     if (result.ok) {
       return finalizePlayback(result, alarmId);
+    }
+    if (failureSteps.some((step) => step.toLowerCase().includes('not signed in'))) {
+      const opened = await openSpotifyMediaFallback(uri);
+      if (opened) {
+        failureSteps.push('Opened Spotify link because beta playback is not connected.');
+        return finalizePlayback(
+          {
+            ok: true,
+            channel: 'deeplink',
+            failureSteps,
+            usedSpotifyUrlScheme: true,
+          },
+          alarmId,
+        );
+      }
     }
     const { playZAlarmFallback } = await import('./zAlarm');
     const zReason =
@@ -901,12 +1245,12 @@ export async function playTrack(uri: string, options?: PlayTrackOptions): Promis
     if (remoteResult) {
       return finalizePlayback(remoteResult, alarmId);
     }
-    const webResult = await playTrackWebApiOnly(uri, failureSteps, false);
+    const webResult = await playTrackWebApiOnly(uri, failureSteps, false, mediaKind);
     if (webResult.ok) {
       return finalizePlayback(webResult, alarmId);
     }
   } else {
-    const webResult = await playTrackWebApiOnly(uri, failureSteps, false);
+    const webResult = await playTrackWebApiOnly(uri, failureSteps, false, mediaKind);
     if (webResult.ok) {
       return finalizePlayback(webResult, alarmId);
     }
@@ -922,7 +1266,9 @@ export async function playTrack(uri: string, options?: PlayTrackOptions): Promis
     uri,
   });
   const trackId = uri.replace('spotify:track:', '');
-  const opened = await openSpotifyTrackFallback(trackId);
+  const opened = uriKind === 'track'
+    ? await openSpotifyTrackFallback(trackId)
+    : await openSpotifyMediaFallback(uri);
   if (opened) {
     alarmifyDebug('Spotify:playTrack', 'deep link openURL returned', { trackId });
     return finalizePlayback(
@@ -950,7 +1296,7 @@ export async function playTrack(uri: string, options?: PlayTrackOptions): Promis
 function logPlaybackDiagnosisIfNeeded(r: PlayTrackResult): void {
   const line = formatPlaybackDiagnosis(r);
   if (r.usedSpotifyUrlScheme || !r.ok) {
-    console.warn('[Alarmify:Playback]', line);
+    console.warn("[Ethan's Alarm:Playback]", line);
   }
   alarmifyDebug('Spotify:playTrack', 'diagnosis', {
     ok: r.ok,
@@ -959,20 +1305,58 @@ function logPlaybackDiagnosisIfNeeded(r: PlayTrackResult): void {
     failureSteps: r.failureSteps,
   });
 }
-// ── User Profile ─────────────────────────────────────────────────────────────
+// ── User Profile / Session ───────────────────────────────────────────────────
 
-export async function getUserProfile(): Promise<{ name: string; image: string | null } | null> {
+type UserProfileResult =
+  | { status: 'ok'; profile: SpotifyUserProfile }
+  | { status: 'invalid' }
+  | { status: 'unavailable' };
+
+async function fetchUserProfileResult(): Promise<UserProfileResult> {
   try {
     const res = await spotifyFetch('/me');
-    if (!res.ok) return null;
+    if (res.status === 401) {
+      await clearAuth();
+      return { status: 'invalid' };
+    }
+    if (!res.ok) return { status: 'unavailable' };
     const data = await res.json();
-    return {
+    const profile: SpotifyUserProfile = {
       name: data.display_name ?? 'Spotify User',
       image: data.images?.[0]?.url ?? null,
     };
+    return { status: 'ok', profile };
   } catch {
+    const stored = await loadAuth();
+    return stored ? { status: 'unavailable' } : { status: 'invalid' };
+  }
+}
+
+export async function getUserProfile(): Promise<SpotifyUserProfile | null> {
+  const result = await fetchUserProfileResult();
+  return result.status === 'ok' ? result.profile : null;
+}
+
+export async function verifySpotifySession(): Promise<{
+  auth: SpotifyAuth;
+  profile: SpotifyUserProfile | null;
+} | null> {
+  const stored = await loadAuth();
+  if (!stored) return null;
+
+  await refreshSpotifyToken();
+  const result = await fetchUserProfileResult();
+
+  if (result.status === 'invalid') {
+    await clearAuth();
     return null;
   }
+
+  const auth = (await loadAuth()) ?? stored;
+  return {
+    auth,
+    profile: result.status === 'ok' ? result.profile : null,
+  };
 }
 
 // ── Auth URL Builder ─────────────────────────────────────────────────────────

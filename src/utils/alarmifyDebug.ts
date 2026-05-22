@@ -19,7 +19,7 @@ export function isAlarmifyDebugEnabled(): boolean {
 export function alarmifyDebug(tag: string, message: string, data?: Record<string, unknown>): void {
   if (!isAlarmifyDebugEnabled()) return;
   const ts = new Date().toISOString();
-  const prefix = `[AlarmifyDebug ${ts}][${tag}]`;
+  const prefix = `[EthanAlarmDebug ${ts}][${tag}]`;
   if (data != null && Object.keys(data).length > 0) {
     console.log(prefix, message, data);
   } else {

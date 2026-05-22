@@ -10,12 +10,15 @@ import {
   Image,
   StyleSheet,
   Animated,
+  Alert,
 } from 'react-native';
 import { Swipeable, TouchableOpacity } from 'react-native-gesture-handler';
 import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Alarm } from '../types';
 import { useStore } from '../store/useStore';
+import { getAlarmMedia, getMediaImageUrl, getMediaSubtitle, getMediaTitle } from '../utils/media';
+import { findNearbyEnabledAlarm } from '../utils/alarmConflicts';
 import { COLORS, FONTS, RADIUS } from '../theme';
 
 const DAY_LABELS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
@@ -46,6 +49,7 @@ interface Props {
 
 export function AlarmCard({ alarm }: Props) {
   const router       = useRouter();
+  const alarms       = useStore((s) => s.alarms);
   const toggleAlarm  = useStore((s) => s.toggleAlarm);
   const deleteAlarm  = useStore((s) => s.deleteAlarm);
   const is24Hour     = useStore((s) => s.is24Hour);
@@ -64,6 +68,29 @@ export function AlarmCard({ alarm }: Props) {
   const handleEdit = useCallback(() => {
     router.push({ pathname: '/add-alarm', params: { alarmId: alarm.id } });
   }, [alarm.id, router]);
+
+  const handleToggle = useCallback(() => {
+    if (!alarm.isEnabled) {
+      const nearby = findNearbyEnabledAlarm(alarms, { ...alarm, isEnabled: true });
+      if (nearby) {
+        Alert.alert(
+          'Nearby alarm warning',
+          'Spotify playback will keep looping after an alarm goes off, so setting another active alarm within 30 minutes usually is not necessary.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Continue anyway',
+              style: 'destructive',
+              onPress: () => void toggleAlarm(alarm.id),
+            },
+          ],
+        );
+        return;
+      }
+    }
+
+    void toggleAlarm(alarm.id);
+  }, [alarm, alarms, toggleAlarm]);
 
   // Step 1 complete: card is open showing delete button
   const onSwipeableOpen = useCallback(() => {
@@ -136,7 +163,7 @@ export function AlarmCard({ alarm }: Props) {
           </View>
           <Switch
             value={alarm.isEnabled}
-            onValueChange={() => toggleAlarm(alarm.id)}
+            onValueChange={handleToggle}
             trackColor={{ false: COLORS.surface2, true: COLORS.primaryDim }}
             thumbColor={alarm.isEnabled ? COLORS.primary : COLORS.textMuted}
             ios_backgroundColor={COLORS.surface2}
@@ -151,28 +178,30 @@ export function AlarmCard({ alarm }: Props) {
           <Text style={[styles.days, !alarm.isEnabled && styles.dimmed]}>{daysLabel(alarm.days)}</Text>
         </View>
 
-        {/* Song Row */}
-        {alarm.track ? (
+        {(() => {
+          const media = getAlarmMedia(alarm);
+          return media ? (
           <View style={styles.songRow}>
-            {alarm.track.albumArt ? (
-              <Image source={{ uri: alarm.track.albumArt }} style={styles.albumArt} />
+            {getMediaImageUrl(media) ? (
+              <Image source={{ uri: getMediaImageUrl(media) }} style={styles.albumArt} />
             ) : (
               <View style={[styles.albumArt, styles.albumPlaceholder]}>
                 <Ionicons name="musical-note" size={14} color={COLORS.primary} />
               </View>
             )}
             <View style={styles.songInfo}>
-              <Text style={styles.songName} numberOfLines={1}>{alarm.track.name}</Text>
-              <Text style={styles.songArtist} numberOfLines={1}>{alarm.track.artist}</Text>
+              <Text style={styles.songName} numberOfLines={1}>{getMediaTitle(media)}</Text>
+              <Text style={styles.songArtist} numberOfLines={1}>{getMediaSubtitle(media)}</Text>
             </View>
-            <FontAwesome5 name="spotify" size={18} color={COLORS.primary} />
+            <FontAwesome5 name="spotify" size={18} color={COLORS.spotify} />
           </View>
         ) : (
           <View style={styles.noSongRow}>
             <Ionicons name="musical-note-outline" size={14} color={COLORS.textMuted} />
-            <Text style={styles.noSongText}>No song selected</Text>
+            <Text style={styles.noSongText}>No music selected</Text>
           </View>
-        )}
+        );
+        })()}
       </TouchableOpacity>
     </Swipeable>
   );

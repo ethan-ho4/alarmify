@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────
-//  Alarmify – Home Screen
+//  Ethan's Alarm – Home Screen
 //  Shows alarms list + Spotify connect state
 // ─────────────────────────────────────────────
 
@@ -10,21 +10,19 @@ import {
   FlatList,
   TouchableOpacity,
   StyleSheet,
-  Image,
   ActivityIndicator,
   SafeAreaView,
   ListRenderItem,
-  Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons, FontAwesome5 } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { syncBedtimeWarningIfNeeded } from '../src/utils/bedtimeGate';
 import { useStore } from '../src/store/useStore';
-import { useSpotifyAuth } from '../src/hooks/useSpotifyAuth';
 import { AlarmCard } from '../src/components/AlarmCard';
 import { AlarmHealthBar } from '../src/components/AlarmHealthBar';
-import { ShortcutsAlarmBar } from '../src/components/ShortcutsAlarmBar';
-import { usesShortcutsAlarmOnIos } from '../src/utils/alarmPlaybackMode';
+import { SpotifyProfileMenu } from '../src/components/SpotifyProfileMenu';
+import { usesLegacyAlarmPlayback } from '../src/utils/alarmPlaybackMode';
 import { Alarm } from '../src/types';
 import { COLORS, FONTS, RADIUS, SHADOWS } from '../src/theme';
 
@@ -49,17 +47,17 @@ export default function HomeScreen() {
   const alarms   = useStore((s) => s.alarms);
   const auth     = useStore((s) => s.auth);
   const profile  = useStore((s) => s.profile);
+  const authLoaded = useStore((s) => s.authLoaded);
   const logout   = useStore((s) => s.logout);
   const loaded   = useStore((s) => s.alarmsLoaded);
   const is24Hour = useStore((s) => s.is24Hour);
   const set24Hour = useStore((s) => s.set24Hour);
-  const { login, loading: authLoading, error: authError } = useSpotifyAuth();
 
-  React.useEffect(() => {
-    if (authError) {
-      Alert.alert('Spotify Login Error', authError);
-    }
-  }, [authError]);
+  useFocusEffect(
+    useCallback(() => {
+      syncBedtimeWarningIfNeeded();
+    }, []),
+  );
 
   const time     = useCurrentTime(is24Hour);
   const greeting = useGreeting();
@@ -108,37 +106,15 @@ export default function HomeScreen() {
             </TouchableOpacity>
 
             {/* Spotify badge */}
-            {auth ? (
-              <TouchableOpacity style={styles.spotifyBadge} onPress={logout}>
-                {profile?.image ? (
-                  <Image source={{ uri: profile.image }} style={styles.avatar} />
-                ) : (
-                  <View style={styles.avatarPlaceholder}>
-                    <Ionicons name="person" size={16} color="#fff" />
-                  </View>
-                )}
-                <FontAwesome5 name="spotify" size={16} color={COLORS.primary} />
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={styles.connectBtn}
-                onPress={login}
-                disabled={authLoading}
-              >
-                {authLoading ? (
-                  <ActivityIndicator size="small" color={COLORS.primary} />
-                ) : (
-                  <>
-                    <FontAwesome5 name="spotify" size={18} color={COLORS.primary} />
-                    <Text style={styles.connectText}>Connect</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            )}
+            {!authLoaded ? (
+              <SpotifyProfileMenu profile={profile} authLoaded={false} onLogout={logout} />
+            ) : auth ? (
+              <SpotifyProfileMenu profile={profile} authLoaded={authLoaded} onLogout={logout} />
+            ) : null}
           </View>
         </View>
 
-        {usesShortcutsAlarmOnIos() ? <ShortcutsAlarmBar /> : <AlarmHealthBar />}
+        {usesLegacyAlarmPlayback() ? <AlarmHealthBar /> : null}
 
         {/* ── Alarm count banner ──────────────────── */}
         {alarms.length > 0 && (
@@ -170,7 +146,7 @@ export default function HomeScreen() {
         activeOpacity={0.85}
       >
         <LinearGradient
-          colors={[COLORS.primary, '#17A349']}
+          colors={[COLORS.primary, COLORS.primaryDark]}
           style={styles.fabGradient}
         >
           <View style={{ width: 24, height: 3, backgroundColor: '#fff', position: 'absolute', borderRadius: 2 }} />

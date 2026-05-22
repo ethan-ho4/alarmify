@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────
-//  Alarmify – Design System / Theme Tokens
+//  Ethan's Alarm – Design System / Theme Tokens
 // ─────────────────────────────────────────────
 
 export const COLORS = {
@@ -11,8 +11,10 @@ export const COLORS = {
   surfaceSolid2: '#17172280',
 
   // Brand
-  primary:    '#1DB954',
-  primaryDim: '#1DB95450',
+  primary:    '#6495ED',
+  primaryDim: '#6495ED50',
+  primaryDark: '#4A7BC8',
+  spotify:    '#1DB954',
   secondary:  '#7C3AED',
   accent:     '#A78BFA',
 

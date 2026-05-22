@@ -15,7 +15,7 @@ export async function notifyShortcutsSyncFailure(message: string): Promise<void>
 
   await Notifications.scheduleNotificationAsync({
     content: {
-      title: 'Alarmify Shortcuts sync',
+      title: "Ethan's Alarm Shortcuts sync",
       body: message,
       sound: false,
     },

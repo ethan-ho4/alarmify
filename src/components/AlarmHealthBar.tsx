@@ -15,7 +15,7 @@ export function AlarmHealthBar() {
 
   useEffect(() => {
     void refresh();
-    const id = setInterval(() => void refresh(), 8_000);
+    const id = setInterval(() => void refresh(), 30_000);
     return () => clearInterval(id);
   }, [refresh]);
 
@@ -47,7 +47,7 @@ export function AlarmHealthBar() {
           onPress={() => void openSpotifyApp().then(() => void refresh())}
           activeOpacity={0.85}
         >
-          <FontAwesome5 name="spotify" size={14} color={COLORS.primary} />
+          <FontAwesome5 name="spotify" size={14} color={COLORS.spotify} />
           <Text style={styles.openSpotifyBtnText}>Open Spotify (refresh devices)</Text>
         </TouchableOpacity>
       ) : null}

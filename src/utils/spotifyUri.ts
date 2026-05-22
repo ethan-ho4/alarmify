@@ -29,6 +29,22 @@ export function sanitizeSpotifyUrl(input: string | null | undefined): string | n
   }
 }
 
+export type SpotifyUriKind = 'track' | 'album' | 'playlist' | 'episode' | 'show';
+
+export function getSpotifyUriKind(uri: string | null | undefined): SpotifyUriKind | null {
+  const sanitized = sanitizeSpotifyUrl(uri);
+  if (!sanitized) return null;
+  const match = sanitized.match(/^spotify:(track|album|playlist|episode|show):/i);
+  return (match?.[1]?.toLowerCase() as SpotifyUriKind | undefined) ?? null;
+}
+
+export function getSpotifyUriId(uri: string | null | undefined): string | null {
+  const sanitized = sanitizeSpotifyUrl(uri);
+  if (!sanitized) return null;
+  const match = sanitized.match(/^spotify:(track|album|playlist|episode|show):(.+)$/i);
+  return match?.[2] ?? null;
+}
+
 /** spotify: URI → https URL (Spotify app also accepts spotify: via Open URL). */
 export function spotifyUriToOpenUrl(uri: string): string {
   const sanitized = sanitizeSpotifyUrl(uri);

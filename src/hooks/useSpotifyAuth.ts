@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────
-//  Alarmify – Spotify PKCE Auth Hook
+//  Ethan's Alarm – Spotify PKCE Auth Hook
 //  Opens the Spotify OAuth flow in the browser
 //  and exchanges the code for tokens.
 // ─────────────────────────────────────────────

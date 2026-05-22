@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 
-/** iOS: keepalive + timer → stop audio at fire → Focus OFF → user Shortcut opens Spotify. */
-export function usesIosFocusKeepaliveAlarm(): boolean {
+/** iOS: keepalive + JS timers + App Remote at fire (no Shortcuts / Web API alarm path). */
+export function usesIosSdkAlarmPlayback(): boolean {
   return Platform.OS === 'ios' && process.env.EXPO_PUBLIC_ALARMIFY_LEGACY_IOS_PLAYBACK !== '1';
 }
 
@@ -12,12 +12,16 @@ export function usesLegacyAlarmPlayback(): boolean {
   return false;
 }
 
-/** Silent keepalive + JS alarm timers (iOS Focus path and legacy mobile paths). */
 export function usesAlarmTimersAndKeepalive(): boolean {
-  return usesLegacyAlarmPlayback() || usesIosFocusKeepaliveAlarm();
+  return usesLegacyAlarmPlayback() || usesIosSdkAlarmPlayback();
 }
 
-/** @deprecated Use usesIosFocusKeepaliveAlarm */
+/** @deprecated Removed on iOS SDK path */
+export function usesIosFocusKeepaliveAlarm(): boolean {
+  return false;
+}
+
+/** @deprecated Removed on iOS SDK path */
 export function usesShortcutsAlarmOnIos(): boolean {
-  return usesIosFocusKeepaliveAlarm();
+  return false;
 }
